@@ -1,0 +1,37 @@
+{
+  "scene": "超市货架（合成演示图），四个商品",
+  "items": [
+    {
+      "name": "保温杯",
+      "price": "49.90",
+      "promo": "第二件半价",
+      "count": "1",
+      "confidence": 0.95
+    },
+    {
+      "name": "玻璃水杯",
+      "price": "12.50",
+      "promo": null,
+      "count": "1",
+      "confidence": 0.95
+    },
+    {
+      "name": "不锈钢饭盒",
+      "price": "35.00",
+      "promo": "满2件减5",
+      "count": "1",
+      "confidence": 0.95
+    },
+    {
+      "name": "马克杯",
+      "price": "19.90",
+      "promo": null,
+      "count": "1",
+      "confidence": 0.95
+    }
+  ],
+  "read_text": [
+    "示例货架（合成演示图）"
+  ],
+  "uncertain": []
+}

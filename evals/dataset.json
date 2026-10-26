@@ -1,0 +1,42 @@
+[
+  {
+    "id": "list_items",
+    "question": "货架上都有什么？",
+    "image": "data/sample_shelf.jpg",
+    "expect_tools": [],
+    "expect_mentions": ["49.9", "12.5"],
+    "note": "直接陈述：价格必须来自画面价签"
+  },
+  {
+    "id": "worth_buy",
+    "question": "货架上的保温杯值不值得买？",
+    "image": "data/sample_shelf.jpg",
+    "expect_tools": [],
+    "expect_mentions": ["49.9"],
+    "note": "决策类问题：先陈述画面事实，不编造行情"
+  },
+  {
+    "id": "compare_price",
+    "question": "保温杯有没有更便宜的？帮我比价",
+    "image": "data/sample_shelf.jpg",
+    "expect_tools": ["compare_price"],
+    "expect_mentions": [],
+    "note": "比价意图必须触发 compare_price 工具"
+  },
+  {
+    "id": "ask_online_price",
+    "question": "玻璃水杯线上多少钱？",
+    "image": "data/sample_shelf.jpg",
+    "expect_tools": ["compare_price"],
+    "expect_mentions": [],
+    "note": "点名列商品 + 价格意图 → 工具查询指定商品"
+  },
+  {
+    "id": "remember_budget",
+    "question": "记住我预算不超过50",
+    "image": null,
+    "expect_tools": ["remember_preference"],
+    "expect_mentions": [],
+    "note": "画像写入：必须调用 remember_preference"
+  }
+]

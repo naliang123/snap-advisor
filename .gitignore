@@ -1,0 +1,21 @@
+# 环境与密钥
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# 运行期数据（示例图与标注除外）
+data/memory.db
+data/eval_memory.db
+data/ablation_memory.db
+data/trace.jsonl
+data/uploads/
+data/eval_report.json
+data/ablation_report.json
+
+# IDE 与本机产物（二维码含局域网 IP，不外传）
+.idea/
+data/web_qr.png

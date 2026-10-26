@@ -1,0 +1,15 @@
+# 小拍 · 拍照购物参谋 Agent —— 运行依赖
+# 安装：pip install -r requirements.txt
+# 国内网络可加镜像：-i https://pypi.tuna.tsinghua.edu.cn/simple
+
+openai>=1.30          # OpenAI 兼容接口客户端（对话 LLM / VLM 共用）
+langgraph>=0.2.0      # Agent 状态图编排
+python-dotenv>=1.0    # .env 配置加载
+fastapi>=0.110        # 网页版服务
+uvicorn>=0.29         # ASGI 服务器
+python-multipart>=0.0.9  # FastAPI 表单/文件上传
+requests>=2.31        # 比价 web 模式的 HTTP 请求
+pillow>=10.0          # 合成示例货架图 / 二维码渲染（仅 scripts 使用）
+qrcode>=7.4           # 局域网访问二维码（--web 时生成 data/web_qr.png）
+pytest>=8.0           # 单元测试
+httpx>=0.27           # 测试：FastAPI TestClient（流式接口一致性测试用）

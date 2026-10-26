@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>小拍 · 拍照购物参谋</title>
+<style>
+  :root { --bg:#f4f6fa; --card:#fff; --line:#e3e8ef; --text:#1f2937; --muted:#6b7280;
+          --primary:#2563eb; --ok:#059669; --warn:#d97706; --radius:14px;
+          --shadow:0 1px 3px rgba(16,24,40,.08); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { font-size:16px; }
+  body { margin:0; font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; z-index:10; background:var(--card);
+           border-bottom:1px solid var(--line); padding:12px 16px; }
+  header .brand { font-size:17px; font-weight:700; }
+  header .brand small { color:var(--muted); font-weight:400; margin-left:6px; font-size:12px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .chip { font-size:11px; padding:3px 9px; border-radius:999px; background:#eef2ff;
+          color:var(--primary); border:1px solid #c7d2fe; }
+  .chip.warn { background:#fef3c7; color:var(--warn); border-color:#fde68a; }
+
+  /* 响应式：窄屏单列（手机），宽屏双列（电脑）——自动切换，无需后端识别 */
+  main { max-width:1080px; margin:0 auto; padding:12px 12px 28px;
+         display:grid; grid-template-columns:1fr; gap:12px; align-items:start; }
+  @media (min-width:900px) { main { grid-template-columns:400px 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line);
+          border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; }
+  .card h2 { margin:0 0 10px; font-size:14px; color:var(--muted); font-weight:600; }
+
+  /* 图片投放区：拖拽 / 粘贴 / 点击 / 拍照，四种方式全支持 */
+  #drop { border:2px dashed var(--line); border-radius:var(--radius); padding:18px 12px;
+          text-align:center; color:var(--muted); font-size:14px; cursor:pointer;
+          transition:border-color .15s, background .15s; }
+  #drop:hover { border-color:var(--primary); }
+  #drop.drag { border-color:var(--primary); background:#eff6ff; }
+  #drop strong { color:var(--primary); }
+  .drop-sub { font-size:12px; margin-top:4px; }
+  #preview { width:100%; max-height:300px; object-fit:contain; border-radius:10px;
+             margin-top:10px; display:none; background:#f8fafc; }
+  .filechip { display:none; margin-top:8px; font-size:12px; color:var(--primary);
+              background:#eff6ff; border:1px solid #c7d2fe; border-radius:999px;
+              padding:3px 10px; }
+
+  .mini-row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .btn { min-height:38px; padding:8px 12px; border-radius:10px; border:1px solid var(--line);
+         background:#fff; color:var(--primary); cursor:pointer; font-size:13px; }
+
+  /* 触屏设备：显示拍照/相册大按钮；电脑隐藏（主用拖拽与粘贴） */
+  .cam-row { display:none; gap:10px; margin-bottom:10px; }
+  @media (pointer:coarse) { .cam-row { display:flex; } .only-mouse { display:none; } }
+  @media (pointer:fine) { .only-touch { display:none; } }
+  .cam-btn { flex:1; min-height:56px; border-radius:var(--radius);
+             border:1.5px dashed var(--primary); background:#eff6ff; color:var(--primary);
+             font-size:15px; font-weight:600; cursor:pointer; }
+  .cam-btn:active { background:#dbeafe; }
+
+  /* 对话区 */
+  #chat { height:42vh; overflow-y:auto; display:flex; flex-direction:column;
+          gap:10px; padding-right:2px; }
+  @media (min-width:900px) { #chat { height:54vh; } }
+  .msg { max-width:88%; padding:10px 12px; border-radius:12px; font-size:15px;
+         line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+  .msg.user { align-self:flex-end; background:#e8f0fe; border-bottom-right-radius:4px; }
+  .msg.bot  { align-self:flex-start; background:#f3f4f6; border-bottom-left-radius:4px; }
+  .badges { margin-top:8px; }
+  .badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px;
+           margin-right:6px; }
+  .badge.ok { background:#d1fae5; color:var(--ok); }
+  .badge.bad { background:#fee2e2; color:#b91c1c; }
+
+  form { display:flex; gap:8px; margin-top:12px; align-items:flex-end; }
+  .input-wrap { flex:1; }
+  .attach { display:none; margin-bottom:6px; font-size:12px; color:var(--primary);
+            background:#eff6ff; border:1px solid #c7d2fe; border-radius:8px; padding:4px 10px; }
+  .attach button { float:right; border:none; background:none; color:var(--muted);
+                   cursor:pointer; font-size:12px; padding:0 2px; }
+  textarea { width:100%; resize:none; min-height:48px; max-height:120px; font:inherit;
+             padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  textarea:focus { outline:2px solid #bfdbfe; border-color:var(--primary); }
+  #send { min-width:72px; min-height:48px; border-radius:12px; border:none;
+          background:var(--primary); color:#fff; font-size:15px; font-weight:600; }
+  #send:disabled { opacity:.55; }
+
+  /* 流式状态与候选链接卡片 */
+  .status { display:flex; align-items:center; gap:8px; margin-top:10px;
+           font-size:12px; color:var(--muted); }
+  /* 关键：上面的作者样式 display:flex 会压过 UA 的 [hidden]{display:none}，
+     不显式声明的话 hidden 属性完全失效——状态条会永久停在最后一个阶段文案上
+     （曾导致"正在组织回答…"看起来卡死，其实答案早就生成完了）。 */
+  .status[hidden] { display:none !important; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--primary);
+         animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.2; } }
+  #stop { border:1px solid var(--line); background:#fff; color:var(--muted);
+          border-radius:8px; padding:2px 10px; font-size:12px; cursor:pointer; }
+  .links { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .link { display:block; padding:7px 10px; border:1px solid var(--line);
+          border-radius:10px; background:#f8fafc; text-decoration:none; }
+  .link .lp { color:var(--ok); font-weight:600; margin-right:6px; font-size:12.5px; }
+  .link .lt { color:var(--primary); font-size:12.5px; }
+  .link .lu { display:block; margin-top:2px; font-size:11px; color:var(--muted);
+              word-break:break-all; }
+  .err { margin-top:10px; padding:8px 10px; border-radius:10px; border:1px solid #fecaca;
+         background:#fee2e2; color:#b91c1c; font-size:12.5px; }
+  .err button { margin-left:8px; border:1px solid #fecaca; background:#fff; color:#b91c1c;
+                border-radius:8px; padding:2px 8px; font-size:12px; cursor:pointer; }
+  .stopped { color:var(--muted); font-size:12px; margin-top:6px; }
+
+  details { margin-top:12px; font-size:13px; }
+  summary { cursor:pointer; color:var(--primary); padding:6px 0; }
+  pre { background:#0f172a; color:#d1e3ff; font-size:11.5px; line-height:1.5;
+        border-radius:8px; padding:10px; overflow:auto; max-height:200px; }
+  .label { font-size:12px; color:var(--muted); margin:10px 0 6px; }
+  .history li { font-size:13px; margin-bottom:6px; color:var(--muted); list-style:none; }
+  .history { padding-left:0; max-height:130px; overflow-y:auto; margin:0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">小拍 · 拍照购物参谋<small>只说有证据的话</small></div>
+  <div class="chips" id="chips"></div>
+</header>
+
+<main>
+  <!-- 图片区：拖拽 / 粘贴 / 点击 / 拍照 -->
+  <section class="card">
+    <h2>1 · 提供一张货架 / 商品 / 网购截图</h2>
+
+    <!-- 手机触屏才显示的拍照大按钮 -->
+    <div class="cam-row">
+      <button class="cam-btn" id="btnCamera" type="button">拍照识别</button>
+      <button class="cam-btn" id="btnAlbum" type="button">从相册选</button>
+    </div>
+    <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
+    <input type="file" id="fileAlbum" accept="image/*" hidden>
+
+    <!-- 投放区：拖拽 / 点击（电脑）；也支持任意位置 Ctrl+V 粘贴截图 -->
+    <div id="drop">
+      <span class="only-mouse"><strong>拖拽图片到这里</strong>，或点击选择文件；也可以直接
+        <strong>Ctrl+V 粘贴截图</strong></span>
+      <span class="only-touch">点击这里选择图片（也可用上方拍照按钮）</span>
+      <div class="drop-sub">支持 jpg / png；网购商品页直接截图拖进来即可</div>
+    </div>
+    <input type="file" id="filePick" accept="image/*" hidden>
+
+    <img id="preview" alt="预览">
+    <span class="filechip" id="filechip"></span>
+
+    <div class="mini-row">
+      <button class="btn" id="useSample" type="button">用示例货架图体验</button>
+      <button class="btn" id="clear" type="button">清除图片</button>
+    </div>
+
+    <details>
+      <summary>画面感知（VLM 结构化结果）</summary>
+      <pre id="perception">等待图片…</pre>
+    </details>
+  </section>
+
+  <!-- 对话 -->
+  <section class="card">
+    <h2>2 · 向小拍提问</h2>
+    <div id="chat"></div>
+    <div class="status" id="status" hidden>
+      <span class="dot"></span><span id="stext"></span>
+      <button id="stop" type="button" hidden>停止</button>
+    </div>
+    <form id="form">
+      <div class="input-wrap">
+        <span class="attach" id="attach"></span>
+        <textarea id="q" rows="2"
+          placeholder="输入问题（截图可直接 Ctrl+V 粘贴进来）&#10;例如：保温杯值不值得买？帮我比价"></textarea>
+      </div>
+      <button id="send" type="submit">发送</button>
+    </form>
+    <details>
+      <summary>本轮证据与校验明细</summary>
+      <div class="label">工具结果（比价 / 记忆）</div>
+      <pre id="tools">—</pre>
+      <div class="label">证据校验（无依据价格检查）</div>
+      <pre id="check">—</pre>
+    </details>
+    <details>
+      <summary>最近对话（SQLite 存档）</summary>
+      <ul class="history" id="history"></ul>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let file = null, fileURL = null;
+
+// 模式角标
+fetch('/api/modes').then(r => r.json()).then(m => {
+  const chips = [
+    ['LLM ' + m.llm_mode, m.llm_mode === 'mock'],
+    ['VLM ' + m.vlm_mode, m.vlm_mode === 'mock'],
+    ['比价 ' + m.price_mode, m.price_mode === 'mock'],
+    ['证据约束 ' + (m.evidence_strict ? '开' : '关'), !m.evidence_strict],
+  ];
+  $('chips').innerHTML = chips.map(([t, w]) =>
+    `<span class="chip${w ? ' warn' : ''}">${t}</span>`).join('');
+});
+
+// ---------- 图片设置（唯一入口） ----------
+function renderAttach() {
+  const box = $('attach');
+  box.textContent = '';
+  if (!file) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.appendChild(document.createTextNode('已附带图片'));
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.title = '移除图片'; btn.textContent = '✕';
+  btn.onclick = clearFile;
+  box.appendChild(btn);
+}
+function setFile(f, label) {
+  if (!f || !f.type || !f.type.startsWith('image/')) return;
+  file = f;
+  if (fileURL) URL.revokeObjectURL(fileURL);
+  fileURL = URL.createObjectURL(f);
+  $('preview').src = fileURL; $('preview').style.display = 'block';
+  const size = (f.size / 1024).toFixed(0);
+  $('filechip').textContent = (label || f.name || '剪贴板图片') + '（' + size + ' KB）';
+  $('filechip').style.display = 'inline-block';
+  renderAttach();
+}
+function clearFile() {
+  file = null;
+  if (fileURL) URL.revokeObjectURL(fileURL);
+  fileURL = null;
+  $('preview').style.display = 'none';
+  $('filechip').style.display = 'none';
+  renderAttach();
+}
+
+// 点击投放区 / 拍照 / 相册 / 示例
+$('drop').onclick = () => $('filePick').click();
+$('filePick').onchange = e => setFile(e.target.files[0], e.target.files[0] && e.target.files[0].name);
+$('btnCamera').onclick = () => $('fileCamera').click();
+$('btnAlbum').onclick = () => $('fileAlbum').click();
+$('fileCamera').onchange = e => setFile(e.target.files[0], '拍照图片');
+$('fileAlbum').onchange = e => setFile(e.target.files[0], e.target.files[0] && e.target.files[0].name);
+$('useSample').onclick = async () => {
+  // 示例图真实取回为 File，走与其他图片完全相同的链路
+  const r = await fetch('/api/sample');
+  const blob = await r.blob();
+  setFile(new File([blob], 'sample_shelf.jpg', { type: 'image/jpeg' }), '示例货架图');
+};
+$('clear').onclick = clearFile;
+
+// 拖拽上传（投放区 + 整页兜底）
+['dragenter', 'dragover'].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) setFile(f, f.name);
+});
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type && f.type.startsWith('image/')) setFile(f, f.name);
+});
+
+// 任意位置 Ctrl+V 粘贴截图（大厂 Agent 同款交互）
+document.addEventListener('paste', e => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith('image/')) {
+      const f = it.getAsFile();
+      if (f) { setFile(f, '剪贴板截图'); e.preventDefault(); }
+      return;
+    }
+  }
+});
+
+// 历史存档
+fetch('/api/history').then(r => r.json()).then(rows => {
+  $('history').innerHTML = (rows || []).slice(0, 8).map(r =>
+    `<li>${r.created_at || ''} · ${(r.question || '').slice(0, 24)}</li>`).join('')
+    || '<li>（暂无）</li>';
+});
+
+function bubble(role, text, extraHTML) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  if (extraHTML) {
+    const s = document.createElement('div'); s.innerHTML = extraHTML; div.appendChild(s);
+  }
+  $('chat').appendChild(div);
+  $('chat').scrollTop = $('chat').scrollHeight;
+}
+
+// ---------- 流式输出 ----------
+// 分块粒度由服务端决定（真实模型原生 chunk；离线 mock 为 24 字符/块 @25ms）；
+// 前端以 16ms 为节奏批量渲染，避免每来一个字就重排一次 DOM。
+const RENDER_INTERVAL_MS = 16;
+// 双超时兜底：心跳只能证明"连接还活着"，不能证明"任务有进展"
+const STALL_MS = 45000;         // 连一个字节都收不到 → 断网 / 服务没了
+const NO_PROGRESS_MS = 120000;  // 只有心跳、没有任何业务事件 → 服务端卡住
+
+let controller = null;
+let lastQuestion = '';
+
+function setStatus(t) {
+  const s = $('stext');
+  if (s) s.textContent = t;
+}
+
+function startThinking() {
+  $('status').hidden = false;
+  $('stop').hidden = false;
+  $('send').disabled = true;
+  setStatus('准备中…');
+}
+
+function endThinking() {
+  $('status').hidden = true;
+  $('stop').hidden = true;
+  $('send').disabled = false;
+  setStatus('');   // 清掉阶段文案，避免任何情况下残留误导性提示
+}
+
+function botBubble() {
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  const txt = document.createElement('span');
+  const linksBox = document.createElement('div');
+  linksBox.className = 'links';
+  div.appendChild(txt);
+  div.appendChild(linksBox);
+  $('chat').appendChild(div);
+  $('chat').scrollTop = $('chat').scrollHeight;
+  return { div: div, txt: txt, linksBox: linksBox };
+}
+
+function renderLinks(box, items) {
+  box.innerHTML = '';
+  const seen = {};
+  (items || []).forEach(function (it) {
+    if (!it.url || seen[it.url]) return;
+    seen[it.url] = 1;
+    const a = document.createElement('a');
+    a.className = 'link';
+    a.href = it.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const p = document.createElement('span');
+    p.className = 'lp';
+    p.textContent = it.price ? '￥' + it.price : '价格未取到';
+    const t = document.createElement('span');
+    t.className = 'lt';
+    t.textContent = (it.platform || '网页') + ' · ' + (it.title || '').slice(0, 24);
+    const u = document.createElement('span');
+    u.className = 'lu';
+    u.textContent = it.url;
+    a.appendChild(p); a.appendChild(t); a.appendChild(u);
+    box.appendChild(a);
+  });
+}
+
+function showError(parent, msg, onRetry) {
+  const box = document.createElement('div');
+  box.className = 'err';
+  box.appendChild(document.createTextNode(msg));
+  if (onRetry) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = '重试';
+    b.onclick = onRetry;
+    box.appendChild(b);
+  }
+  parent.appendChild(box);
+}
+
+async function runAsk(q) {
+  lastQuestion = q;
+  const ui = botBubble();
+  let text = '', pending = '', flush = null;
+  let links = [], toolList = [], gotDelta = false;
+
+  const push = t => {
+    pending += t;
+    if (!flush) {
+      flush = setTimeout(() => {
+        text += pending; pending = ''; flush = null;
+        ui.txt.textContent = text;
+        $('chat').scrollTop = $('chat').scrollHeight;
+      }, RENDER_INTERVAL_MS);
+    }
+  };
+  const settle = () => {
+    if (flush) { clearTimeout(flush); flush = null; }
+    text += pending; pending = '';
+  };
+  const apply = d => {
+    // 链接在卡片区单独呈现，正文去掉重复的【参考链接】块
+    const clean = String(d.answer || '').split('【参考链接】')[0].trim();
+    ui.txt.textContent = clean || d.answer || '（无回答）';
+    renderLinks(ui.linksBox, d.links || []);
+    const s = document.createElement('div');
+    s.innerHTML = badges(d);
+    ui.div.insertBefore(s, ui.linksBox);
+    $('perception').textContent = JSON.stringify(d.perception, null, 2);
+    $('tools').textContent = JSON.stringify(d.tool_results, null, 2);
+    $('check').textContent = JSON.stringify({ violations: d.violations }, null, 2);
+  };
+
+  startThinking();
+  controller = new AbortController();
+  let lastByte = Date.now(), lastProgress = Date.now(), stopReason = '';
+  const finish = () => {
+    clearInterval(stall);
+    endThinking();
+    controller = null;
+  };
+  const stall = setInterval(() => {
+    const now = Date.now();
+    if (now - lastByte > STALL_MS) {
+      stopReason = '连接中断（45 秒收不到任何数据）';
+    } else if (now - lastProgress > NO_PROGRESS_MS) {
+      stopReason = '服务端长时间无进展（仅心跳，已等 120 秒）';
+    } else {
+      return;
+    }
+    clearInterval(stall);
+    if (controller) controller.abort();
+  }, 2000);
+
+  const fd = new FormData();
+  fd.append('question', q);
+  if (file) fd.append('image', file);
+
+  try {
+    const resp = await fetch('/api/ask/stream', {
+      method: 'POST', body: fd, signal: controller.signal,
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder('utf-8');
+    let buf = '';
+    for (;;) {
+      const rd = await reader.read();
+      if (rd.done) break;
+      lastByte = Date.now();
+      buf += dec.decode(rd.value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const raw = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 2);
+        if (!raw.startsWith('data:')) continue;   // 心跳注释帧：只算"连接活着"
+        let ev;
+        try { ev = JSON.parse(raw.slice(5).trim()); } catch (e2) { continue; }
+        lastProgress = Date.now();                // 业务事件：才算"有进展"
+        if (ev.type === 'start') setStatus('已连接，开始处理…');
+        else if (ev.type === 'phase') setStatus(ev.label || '');
+        else if (ev.type === 'perception') {
+          $('perception').textContent = JSON.stringify(ev.data, null, 2);
+        } else if (ev.type === 'tool') {
+          toolList.push({ tool: ev.name, output: ev.output });
+          $('tools').textContent = JSON.stringify(toolList, null, 2);
+        } else if (ev.type === 'links') {
+          links = ev.items || [];
+          renderLinks(ui.linksBox, links);        // 链接尽早出现，不等正文
+        } else if (ev.type === 'delta') {
+          gotDelta = true;
+          push(ev.text || '');
+        } else if (ev.type === 'rollback') {
+          settle(); text = ''; pending = '';      // 该轮改为工具调用，撤回文字
+          ui.txt.textContent = '';
+        } else if (ev.type === 'done') {
+          settle(); finish(); apply(ev); return;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message || '服务端错误');
+        }
+      }
+    }
+    throw new Error('连接已断开（未收到结束标识）');
+  } catch (err) {
+    settle();
+    finish();
+    const aborted = !!(err && err.name === 'AbortError');
+
+    // 一个字都没收到 → 自动回退一次性接口，保证功能完整、结果一致
+    if (!gotDelta) {
+      try {
+        const fd2 = new FormData();
+        fd2.append('question', q);
+        if (file) fd2.append('image', file);
+        const r2 = await fetch('/api/ask', { method: 'POST', body: fd2 });
+        if (r2.ok) { apply(await r2.json()); return; }
+      } catch (e3) { /* 落到下方提示 */ }
+    }
+
+    // 已有部分内容：保留已生成的正文与链接，给出明确提示
+    const userStopped = aborted && !stopReason;   // 只有"点停止"才是用户主动中断
+    ui.txt.textContent = text || (userStopped ? '（已停止）' : '（生成失败）');
+    renderLinks(ui.linksBox, links);
+    if (userStopped) {
+      if (text) {
+        const note = document.createElement('div');
+        note.className = 'stopped';
+        note.textContent = '（已停止生成，以上为已生成部分）';
+        ui.div.appendChild(note);
+      }
+    } else {
+      showError(ui.div, '生成中断：' + (stopReason || (err && err.message) || err) +
+        '（已保留上面生成的部分）', () => { ui.div.remove(); runAsk(lastQuestion); });
+    }
+  }
+}
+
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('q').value.trim();
+  if (!q) return;
+  bubble('user', q);
+  $('q').value = '';
+  await runAsk(q);
+};
+
+$('stop').onclick = () => { if (controller) controller.abort(); };
+
+function badges(d) {
+  const v = d.violations || [];
+  const ok = '<span class="badge ok">证据校验通过</span>';
+  const bad = v.map(x =>
+    `<span class="badge bad">${x.type}${x.price ? ' ' + x.price : ''}</span>`).join('');
+  return `<div class="badges">${v.length ? bad : ok}</div>`;
+}
+</script>
+</body>
+</html>
