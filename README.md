@@ -223,6 +223,9 @@ copy .env.example .env
 
 ```powershell
 .venv\Scripts\python.exe main.py --test                  # 单元测试
+.venv\Scripts\python.exe main.py --index                 # 重建检索索引（记忆 + 知识库）
+.venv\Scripts\python.exe main.py --rag-eval              # 检索评测（召回率 / 排序）
+.venv\Scripts\python.exe main.py --rag-ablation          # 检索消融（策略 / 切分 / 注入）
 .venv\Scripts\python.exe main.py --loose                 # 消融模式（关约束）
 .venv\Scripts\python.exe main.py --loose --confirm       # 消融 + HITL 确认演示
 ```
@@ -241,18 +244,19 @@ copy .env.example .env
 | **统一入口** | `agent/runner.py` | CLI/Web/评测共用的 `run_once()`；自动补生成示例图 |
 | **对话客户端** | `llm/client.py` | OpenAI 兼容真实调用 + **离线 mock 大脑**（确定性规则，覆盖 function calling 循环） |
 | **视觉感知** | `llm/vlm.py` | 照片 → 结构化 JSON（价格只来自价签）；真实 VLM / 离线标注双模式 |
-| **工具注册表** | `tools/registry.py` | 三个工具的 function-calling schema 与分发，输出全部带 evidence |
+| **工具注册表** | `tools/registry.py` | 四个工具的 function-calling schema 与分发，输出全部带 evidence |
 | **比价工具** | `tools/price.py` | mock（演示数据，明确标注）/ web（Tavily→DDG→Bing）双模式；**绝不静默造假** |
 | **长期记忆** | `memory/store.py` | SQLite：画像事实（写入/查询）+ 对话存档 |
-| **证据契约** | `evidence.py` | 回答中每个价格必须有依据；演示数据必须声明——本项目的灵魂 |
+| **证据契约** | `evidence.py` | 回答中每个价格必须有依据、引用编号必须真实、演示数据必须声明——本项目的灵魂 |
+| **检索层（RAG）** | `rag/` | 切分 / 嵌入 / SQLite 向量+全文 / 混合检索 / 重排 / 索引构建；把记忆变成可召回的证据 |
 | **轨迹日志** | `logging_utils.py` | JSONL 逐节点事件（data/trace.jsonl），调试与复盘 |
 | **流式通道** | `agent/streaming.py` | ContextVar 事件发射器；未绑定时自动退化为一次性输出（保证结果一致） |
 | **流式渲染** | `app/static/index.html` | SSE 帧解析 + 16ms 批量渲染 + 停止/重试/超时回退/链接卡片 |
-| **CLI** | `main.py` | demo / 单次 / 多轮 / 网页 / 评测 / 消融 / 测试 七种入口 |
-| **网页版** | `app/server.py` + `app/static/index.html` | FastAPI 五个接口（含 SSE 流式）+ 单文件前端（无构建工具、无 CDN 依赖） |
+| **CLI** | `main.py` | demo / 单次 / 多轮 / 网页 / 评测 / 消融 / 建索引 / 检索评测 / 检索消融 / 测试 十种入口 |
+| **网页版** | `app/server.py` + `app/static/index.html` | FastAPI 六个接口（含 SSE 流式）+ 单文件前端（无构建工具、无 CDN 依赖） |
 | **示例数据** | `scripts/make_sample_image.py` | 合成货架图 + ground truth 标注（幂等可重复运行） |
-| **评测** | `evals/` | 5 用例数据集、跑分脚本、消融脚本，报告落 `data/*.json` |
-| **测试** | `tests/` | 27 个用例：工具契约 / 证据检出 / 主图循环 / Web 冒烟 / **流式一致性与链接直出** |
+| **评测** | `evals/` | 5 用例数据集 + 24 条检索用例、跑分脚本、消融脚本，报告落 `data/*.json` |
+| **测试** | `tests/` | 41 个用例：工具契约 / 证据检出 / 主图循环 / Web 冒烟 / **流式一致性** / **检索与引用 grounding** |
 
 ---
 
@@ -287,6 +291,13 @@ snap-advisor/
 ├── memory/
 │   └── store.py             #   SQLite 画像 + 对话存档
 │
+├── rag/                     # 检索层（RAG）
+│   ├── embed.py             #   文本向量（真实语义 / 离线词面哈希双模式）
+│   ├── chunk.py             #   切分（带重叠，保留可溯源 id）
+│   ├── store.py             #   SQLite 存 chunk + 向量 BLOB + FTS5 全文索引
+│   ├── retrieve.py          #   向量 / BM25 / 混合 RRF / 重排
+│   └── index.py             #   索引构建：画像事实 / 历史问答 / 本地知识库
+│
 ├── app/                     # 网页版
 │   ├── server.py            #   FastAPI 接口（含 /api/ask/stream 的 SSE）
 │   └── static/index.html    #   单文件前端（流式渲染 / 拖拽粘贴 / 响应式）
@@ -296,18 +307,24 @@ snap-advisor/
 │
 ├── evals/
 │   ├── dataset.json         #   5 用例评测集
+│   ├── rag_dataset.json     #   24 条检索用例（含长文档）
 │   ├── run_eval.py          #   跑分脚本
-│   └── ablation.py          #   消融实验脚本
+│   ├── rag_eval.py          #   检索评测（Recall@5 / Recall@1 / MRR / 端到端）
+│   ├── ablation.py          #   证据约束消融脚本
+│   └── rag_ablation.py      #   检索消融（策略 / 切分 / 注入方式）
 │
-├── tests/                   # 27 个单元测试（离线 mock）
+├── tests/                   # 41 个单元测试（离线 mock）
 │   ├── test_streaming.py    #   流式 == 一次性、delta 拼接、链接直出
 │   ├── test_api_stream.py   #   SSE 协议与接口一致性
+│   ├── test_rag.py          #   切分 / 嵌入 / 检索 / 引用 grounding
 │   └── ...                  #   工具契约 / 证据检出 / 图循环
 │
 └── data/                    # 运行期数据（大多不进 git）
     ├── sample_shelf.jpg              # 合成示例图（进 git）
     ├── perceptions/sample_shelf.jpg.json  # mock 感知标注（进 git）
     ├── memory.db                     # 日常记忆库（不进 git）
+    ├── rag.db                        # 检索库：chunk + 向量 + 全文索引（不进 git）
+    ├── kb/                           # 可选本地知识库（放 *.md 即被索引）
     ├── trace.jsonl                   # 节点轨迹（不进 git）
     ├── uploads/                      # 网页上传的照片（不进 git）
     └── eval_report.json / ablation_report.json   # 评测报告（不进 git）
@@ -420,6 +437,88 @@ VLM 被要求严格输出 JSON（scene/items/read_text/uncertain），并明确
   这与项目的诚实原则一致：不假装知道最低价；
 - 前端把链接渲染成可点击卡片（`target=_blank`），手机上可直接跳转到商品页。
 
+### 7.9 检索增强（RAG）：把记忆变成可召回的证据
+
+**为什么要做（这不是硬加的功能）**：原来的记忆是"把画像全量塞进提示词"，
+用得越久越塞不下——消融表 C 量化了这个必然失效的过程：
+
+| 记忆条数 | 全量注入 token（估） | 只注入检索到的 Top-5 | 8k 窗口是否放得下 |
+|---|---|---|---|
+| 20 | 353 | 88 | 是 |
+| 100 | 1,763 | 88 | 是 |
+| 300 | 5,289 | 88 | 是 |
+| 1,000 | 17,630 | 88 | **否（必然被截断）** |
+
+所以检索不是为了赶时髦，而是这里**本来就存在、只是原来做得很糙**的需求。
+
+**什么时候该检索（三问测试，全过才做）**：① 答案藏在大量文本里，靠关键词/SQL
+查不准？② 检索不到会直接答错或答不出？③ 用户能直观看到价值？
+本项目里真正过这三问的是"回忆用户说过什么/问过什么"；**说明书、政策文档问答
+这类场景过不了第 ② 问，所以没有硬塞进来。**
+
+**数据从哪来（三种，全部带 source 可溯源）**：
+
+| source | 内容 | 何时入库 |
+|---|---|---|
+| `memory_fact` | 用户明确说过的偏好/预算 | `remember_preference` 写入时同步索引 |
+| `memory_turn` | 过去的问答（问 + 答） | 每轮问答结束后自动增量索引 |
+| `kb_file` | `data/kb/*.md` 本地知识库 | `main.py --index` |
+
+**管线**：切分（300 字 / 重叠 60）→ 嵌入 → SQLite 存（chunk 文本 + 向量 BLOB +
+FTS5 全文索引）→ 混合检索（RRF）→ 可选重排 → 作为**工具结果**交给模型 →
+引用编号 → `evidence.py` 做引用 grounding 校验。
+
+关键取舍（每个都能讲出理由）：
+- **不引入向量数据库**：几千条以内 SQLite + 余弦暴力检索是毫秒级，零额外依赖、
+  零额外服务；真到十万条再换 ANN 不迟；
+- **向量运算用纯 Python**（未引入 numpy）：1536 维 × 千条也就百毫秒量级，
+  换来的是零新增依赖、离线可跑；
+- **中文全文检索的坑**：SQLite FTS5 的 unicode61 会把连续汉字当一个整词，
+  中文几乎检索不到——这里把中文展开成单字 + bigram 再入库（查询同样处理），
+  用最朴素的方式让 BM25 在中文上真正生效；
+- **混合检索用 RRF 而不是加权求和**：余弦（0~1）和 BM25（负数）量纲不同，
+  强行加权对分布敏感；RRF 只用排名，天然可比；
+- **重排在真实模式用 LLM 打分，离线用词面覆盖率**（失败自动降级，不影响主流程）。
+
+**离线伪向量的诚实说明**：未配 `EMBED_API_KEY` 时用的是**词面哈希伪向量**
+（汉字单字/bigram 哈希到 256 维），只衡量字面重合——"便宜"和"实惠"不会被判
+相似。**它不是语义检索**，库里按 `embed_mode` 隔离存储、检索时只比对同模式
+向量，绝不拿伪向量的成绩冒充语义检索。配了 Key 才是真语义嵌入。
+
+**引用与"引用传染"**：检索结果带 `chunk_id`，回答必须写成 `【记忆:chunk_id】`，
+`evidence.py` 会校验引用编号是否真的来自本轮检索结果（编造编号 = 违规）。
+另外历史回答入库前会**先剥掉引用编号**，否则旧引用会随文本被反复复制，
+导致引用指向的不是本轮证据——这是实测中真踩到的坑。
+
+**实测数据**（`python evals/rag_eval.py`，24 条用例，离线可复现）：
+
+```
+Recall@5 = 100%    Recall@1 = 83%    MRR = 0.903
+端到端：4/4 个回忆类问题主动触发 search_kb，引用 grounding 违规 0 处
+```
+
+**消融数据**（`python evals/rag_ablation.py`）：
+
+| A 检索策略 | Recall@5 | Recall@1 | MRR |
+|---|---|---|---|
+| 纯向量 | 100% | 83% | 0.885 |
+| 纯关键词 BM25 | 100% | 79% | 0.889 |
+| 混合 RRF | 100% | 83% | 0.903 |
+| **混合 + 重排** | 100% | **96%** | **0.979** |
+
+| B 切分大小 | 片段数 | Recall@5 | MRR |
+|---|---|---|---|
+| 200 字 | 30 | 100% | 0.903 |
+| 500 字 | 26 | 100% | 0.910 |
+| 1000 字 | 26 | 100% | 0.910 |
+
+> B 组的诚实结论：**在这个数据规模下切分几乎不影响效果**（差异 0.007），
+> 因为文档都短、且切分不会把句子切断。真正的差异要等知识库里有长文档才会显现
+> ——把结论如实写在这里，而不是编一个"切分很关键"的故事。
+
+**命令**：`main.py --index`（重建索引）、`--rag-eval`、`--rag-ablation`；
+网页端 `GET /api/kb` 可查看检索库片段数与嵌入模式。
+
 ---
 
 ## 8. 配置项说明
@@ -443,7 +542,13 @@ VLM 被要求严格输出 JSON（scene/items/read_text/uncertain），并明确
 | `SNAP_LOOSE` | `0` | `1`=全局关闭证据约束（消融用；CLI 也可 `--loose`） |
 | `MAX_TOOL_ROUNDS` | `3` | 单轮问答最大工具调用轮数 |
 | `SNAP_MEMORY_DB` | `data/memory.db` | 记忆库路径（评测/测试用它隔离） |
+| `SNAP_RAG_DB` | `data/rag.db` | 检索库路径（评测/测试用它隔离） |
 | `SNAP_TRACE_FILE` | `data/trace.jsonl` | 轨迹日志路径 |
+| `EMBED_API_KEY` | 空 | 嵌入服务 Key；**留空则用离线词面伪向量**（非语义） |
+| `EMBED_BASE_URL` / `EMBED_MODEL` | OpenAI / `text-embedding-3-small` | 嵌入服务地址与模型（可与对话模型不同供应商） |
+| `RAG_MODE` | `hybrid` | 检索策略：`vector` / `bm25` / `hybrid` |
+| `RAG_RERANK` | `0` | `1`=对候选重排（真实模式多一次 LLM 调用，实测 MRR 0.903→0.979） |
+| `RAG_AUTO_INDEX` | `1` | 问答结束后自动增量索引本轮对话 |
 
 **默认配置的语义**：开箱即 mock，是为了"零成本验证全链路"；接真实能力时
 只填 Key 不改代码。`PRICE_MODE=web` 在无 Tavily Key 时会自动尝试
@@ -576,6 +681,14 @@ temperature 参数重试一次，无需手工处理。若换用其他有类似�
 ② 前端 45 秒收不到任何字节判定断连；③ 只有心跳、120 秒无业务进展也会中止并
 给出「重试」——心跳只证明连接活着，不再掩盖"服务端无进展"。
 
+**Q20：问"我上次说过什么"，回答却说没检索到？**
+按顺序排查：① `GET /api/kb` 看 `chunks` 是否为 0——是 0 说明检索库没建，
+跑一次 `main.py --index`，或提一个回忆类问题（首次会自动建索引）；
+② 记忆里本来就没内容：先说一句"记住：我不买含硅油的洗发水"，再问一次；
+③ 未配 `EMBED_API_KEY` 时是**词面检索**，同义词（"便宜" vs "实惠"）召回不到，
+这是预期行为，配 Key 后才是语义检索；④ 想看检索器本身的成绩，跑
+`evals\rag_eval.py`，会给出 Recall@5 / Recall@1 / MRR 与端到端触发率。
+
 **Q18：回答里没有候选商品链接？**
 链接来自比价工具结果里的 `url` 字段：① 若为 `PRICE_MODE=mock`（离线演示），
 结果是演示数据、本就没有链接，属正常；② 若为 web 模式但仍无链接，
@@ -597,18 +710,22 @@ temperature 参数重试一次，无需手工处理。若换用其他有类似�
 3. **给评测集加用例**：在 `evals/dataset.json` 加一条（比如"马克杯线上
    多少钱"→ 期望 `compare_price`），跑 `evals\run_eval.py` 看通过与否 →
    学会用评测驱动改动。
-4. **接真实比价**：申请 Tavily Key 填入 `.env`，`PRICE_MODE=web`，对比
+4. **玩转检索**：先说一句"记住：我不买含硅油的洗发水"，再问"我上次说过买洗发水
+   要注意什么"，观察它是否触发 `search_kb`、回答是否带 `【记忆:...】` 编号；
+   然后 `main.py --rag-eval` 看 Recall@5，`--rag-ablation` 看"重排到底值不值"
+   那张表——**用数据说话而不是凭感觉**，是这个项目最值钱的习惯。
+6. **接真实比价**：申请 Tavily Key 填入 `.env`，`PRICE_MODE=web`，对比
    演示数据与真实网页抽取的差异，观察 evidence 里 source/engine 的变化。
-5. **接真实 VLM 与 LLM**：填 `VLM_API_KEY` 与 `DEEPSEEK_API_KEY`，用手机
+7. **接真实 VLM 与 LLM**：填 `VLM_API_KEY` 与 `DEEPSEEK_API_KEY`，用手机
    拍真实货架照片走 `--image` 流程，观察真实模型是否遵守证据约束、违规
    检出是否工作（这一步最能体会"诚实 Agent"的价值）。
-6. **做真实消融**：真实 LLM 下分别跑严格/松弛模式各 10 个问题，统计
+8. **做真实消融**：真实 LLM 下分别跑严格/松弛模式各 10 个问题，统计
    无证据断言率——你会得到属于自己的、可写进简历的消融数据。
-7. **玩转流式**：`curl -N -X POST -F "question=保温杯值不值？帮我比价"
+9. **玩转流式**：`curl -N -X POST -F "question=保温杯值不值？帮我比价"
    http://127.0.0.1:8000/api/ask/stream` 直接看 SSE 原始帧，认全
    start/phase/delta/links/done；再在前端点一次「停止」，观察中断时
    内容如何保留、如何重试——这是"工程化程度"的直观体现。
-8. **进阶（练架构）**：给 `agent/graph.py` 加 SQLite checkpointer
+10. **进阶（练架构）**：给 `agent/graph.py` 加 SQLite checkpointer
    （`langgraph` 的 checkpointer 生态），让中断的对话可以从上次的
    finalize 状态恢复——这会把"断点续作"能力补全。
 

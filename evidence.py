@@ -71,11 +71,17 @@ def allowed_prices(state: dict) -> set:
     texts = list(perception.get("read_text") or [])
     for tr in state.get("tool_results") or []:
         out = tr.get("output") or {}
+        # 画像事实（query_profile 返回 {"facts": [...]}）是用户【自己说过的话】，
+        # 属于有出处的信息：漏掉它会把"我预算 200 元"误判成无证据断言。
+        texts.extend(str(f) for f in (out.get("facts") or []))
         for r in out.get("results") or []:
             if r.get("price"):
                 allowed.add(_norm(r["price"]))
+            # text 是检索类工具（search_kb）的正文片段：来自记忆/知识库，
+            # 与比价结果的 title 一样属于"有出处"的价格来源
             texts.append(r.get("title") or "")
             texts.append(r.get("note") or "")
+            texts.append(r.get("text") or "")
 
     for text in texts:
         for p in extract_prices(text) + cn_prices(text):
@@ -92,6 +98,32 @@ def uses_demo_data(state: dict) -> bool:
     return False
 
 
+# 引用编号：【记忆:chunk_id】或 [记忆:chunk_id]（模型两种写法都出现过）
+_CITE_RE = re.compile(r"【?记忆[:：]([^】\]]+)】?")
+
+
+def cited_ids(answer: str) -> list:
+    """抽出回答里引用的知识库编号。"""
+    return [c.strip() for c in _CITE_RE.findall(answer or "") if c.strip()]
+
+
+def check_citations(answer: str, state: dict) -> list:
+    """引用 grounding 校验：引用的编号必须真的来自本轮检索结果。
+
+    这是证据契约在 RAG 上的延伸——光"给了引用"还不够，引用还得是真的。
+    编造一个没检索到的编号，和编造一个价格一样属于幻觉。
+    """
+    valid = set()
+    for tr in state.get("tool_results") or []:
+        if tr.get("tool") != "search_kb":
+            continue
+        for r in (tr.get("output") or {}).get("results") or []:
+            if r.get("chunk_id"):
+                valid.add(r["chunk_id"])
+    return [{"type": "引用不存在", "chunk_id": c}
+            for c in cited_ids(answer) if c not in valid]
+
+
 def check_answer(answer: str, state: dict) -> dict:
     """校验最终回答：返回违规清单与明细（供展示与评测）。"""
     allowed = allowed_prices(state)
@@ -101,8 +133,10 @@ def check_answer(answer: str, state: dict) -> dict:
             violations.append({"type": "无证据价格", "price": p})
     if uses_demo_data(state) and "演示" not in (answer or ""):
         violations.append({"type": "未声明演示数据"})
+    violations.extend(check_citations(answer, state))
     return {
         "violations": violations,
         "price_claims": extract_prices(answer or ""),
         "allowed_prices": sorted(allowed),
+        "citations": cited_ids(answer),
     }

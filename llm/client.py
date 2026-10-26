@@ -233,7 +233,13 @@ def _mock_reply(messages, tools=None):
 
     text = last_user
 
-    # 2) 比价意图 → 发起 compare_price 工具调用
+    # 2) 回忆类意图 → search_kb（放在比价之前：问"上次那款多少钱"是在回忆，
+    #    不是在查当前商品的线上价，两者不能混淆）
+    if has_tools and any(k in text for k in
+                         ("上次", "以前", "之前", "那款", "说过", "提过", "还记得")):
+        return _tool_call_msg("search_kb", {"query": text.strip()[:60], "top_k": 5})
+
+    # 3) 比价意图 → 发起 compare_price 工具调用
     if has_tools and any(k in text for k in ("比价", "便宜", "多少钱", "贵不贵", "线上")):
         item = _pick_item(perception, text)
         if item:
@@ -254,6 +260,20 @@ def _mock_reply(messages, tools=None):
 
 
 def _answer_after_tool(result: dict, perception: dict, loose: bool) -> str:
+    # 知识库/记忆检索的结果（与比价结果同形，靠 evidence.source 区分）
+    if (result.get("evidence") or {}).get("source") == "knowledge_base":
+        items = result.get("results") or []
+        if not items:
+            return ("我在自己的记忆和知识库里检索过，没有找到相关内容。"
+                    "我不凭印象编——你可以再说清楚一点，我记下来以后就能检索到。")
+        lines = ["我检索到这些相关记录："]
+        for r in items:
+            lines.append("- %s [记忆:%s]（来自%s）" % (
+                (r.get("text") or "").replace("\n", " ")[:80],
+                r.get("chunk_id", ""), r.get("platform", "知识库")))
+        lines.append("以上只来自检索到的记录，编号可溯源；没检索到的我不瞎说。")
+        return "\n".join(lines)
+
     # compare_price 的结果
     if "results" in result:
         lines = ["我查到的线上报价："]

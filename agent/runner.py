@@ -7,6 +7,7 @@ run_once(question, image_path, loose, messages)：
 import config
 from agent.graph import get_graph
 from memory import store
+from rag import index as rag_index
 
 
 def run_once(question: str, image_path=None, loose=None, messages=None) -> dict:
@@ -27,7 +28,11 @@ def run_once(question: str, image_path=None, loose=None, messages=None) -> dict:
         "perception": None,
         "violations": [],
     }
-    return graph.invoke(state, {"recursion_limit": 40})
+    result = graph.invoke(state, {"recursion_limit": 40})
+    # 本轮问答写入检索库：以后问到相关话题时能被召回（失败不影响本次结果）
+    if config.RAG_AUTO_INDEX and result.get("final_answer"):
+        rag_index.try_index_turn(question, result["final_answer"])
+    return result
 
 
 def ensure_sample() -> None:

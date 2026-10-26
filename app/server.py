@@ -4,6 +4,7 @@
 
 接口：
   GET  /api/modes        当前各层模式（mock/real）
+  GET  /api/kb           检索库概况（片段数 / 嵌入模式）
   GET  /api/sample       示例货架图
   POST /api/ask          一次性提问（multipart：question 必填，image 可选）
   POST /api/ask/stream   流式提问（SSE，事件协议见 README「流式输出」章节）
@@ -41,6 +42,17 @@ HARD_TIMEOUT = 180
 @app.get("/api/modes")
 def modes():
     return config.mode_summary()
+
+
+@app.get("/api/kb")
+def kb_stats():
+    """检索库概况：多少片段、用的哪种嵌入（便于确认知识库是否真的建起来了）。"""
+    try:
+        from rag import store as kbstore
+        return {"chunks": kbstore.count(), "embed_mode": config.EMBED_MODE,
+                "rag_mode": config.RAG_MODE, "rerank": config.RAG_RERANK}
+    except Exception as e:  # noqa: BLE001
+        return {"chunks": 0, "error": str(e)[:200]}
 
 
 @app.get("/api/sample")

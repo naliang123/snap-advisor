@@ -7,7 +7,8 @@ import json
 import time
 
 from memory import store
-from tools import price
+from rag import index as rag_index
+from tools import kb, price
 
 # OpenAI function calling 工具 schema（真实模式直接下发给对话模型）
 TOOLS = [
@@ -47,6 +48,26 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_kb",
+            "description": (
+                "在用户自己的记忆（说过的偏好、过去的问答）与本地知识库里检索相关"
+                "内容。用于回忆用户以前说过什么、以前问过什么；资料变多时比全量"
+                "列出更高效。检索不到就如实说没查到。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "检索问题，例如：我以前说过买洗发水要注意什么"},
+                    "top_k": {"type": "integer", "description": "返回条数，默认 5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -69,6 +90,8 @@ def run_tool(name: str, arguments_json: str) -> dict:
         if not fact:
             return {"status": "empty", "reason": "没有可记住的内容"}
         store.add_fact(fact, source="user_statement")
+        # 同步进检索库：以后问起相关话题时能被召回（失败不影响本次记住）
+        rag_index.try_index_fact(fact)
         return {"status": "已记住", "fact": fact,
                 "evidence": {"source": "user_statement", "fetched_at": _now()}}
 
@@ -76,5 +99,8 @@ def run_tool(name: str, arguments_json: str) -> dict:
         facts = [f["fact"] for f in store.get_facts()]
         return {"facts": facts,
                 "evidence": {"source": "memory", "fetched_at": _now()}}
+
+    if name == "search_kb":
+        return kb.search_kb(args.get("query", ""), int(args.get("top_k", 5) or 5))
 
     return {"error": "未知工具 %s" % name}

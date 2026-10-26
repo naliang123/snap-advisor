@@ -32,6 +32,10 @@ def parse_args():
                     help="购买建议输出前人工确认（HITL 演示）")
     ap.add_argument("--eval", action="store_true", help="运行离线评测")
     ap.add_argument("--ablation", action="store_true", help="运行消融实验")
+    ap.add_argument("--index", action="store_true",
+                    help="重建检索索引（记忆 + 本地知识库）")
+    ap.add_argument("--rag-eval", action="store_true", help="运行检索评测（召回率/排序）")
+    ap.add_argument("--rag-ablation", action="store_true", help="运行检索消融实验")
     ap.add_argument("--test", action="store_true", help="运行单元测试")
     return ap.parse_args()
 
@@ -129,6 +133,17 @@ def main():
     if args.ablation:
         _run_script("evals/ablation.py")
         return
+    if args.rag_eval:
+        _run_script("evals/rag_eval.py")
+        return
+    if args.rag_ablation:
+        _run_script("evals/rag_ablation.py")
+        return
+    if args.index:
+        from rag import index as rag_index
+        stats = rag_index.reindex_all()
+        print("检索索引已重建：%s" % stats)
+        return
     if args.web:
         import socket
         import uvicorn
@@ -198,12 +213,18 @@ def _make_qr(url):
 
 
 def _run_script(rel_path):
-    """以模块方式执行仓库内脚本（evals 等非包目录）。"""
+    """以模块方式执行仓库内脚本（evals 等非包目录）。
+
+    脚本以模块方式加载时 __name__ 不是 __main__，因此这里显式调用其 main()。
+    """
     import importlib.util
     path = config.ROOT / rel_path
     spec = importlib.util.spec_from_file_location(path.stem, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    fn = getattr(mod, "main", None)
+    if fn:
+        fn()
 
 
 if __name__ == "__main__":
