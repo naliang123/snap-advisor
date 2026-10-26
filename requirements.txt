@@ -5,7 +5,8 @@
 openai>=1.30          # OpenAI 兼容接口客户端（对话 LLM / VLM 共用）
 langgraph>=0.2.0      # Agent 状态图编排
 python-dotenv>=1.0    # .env 配置加载
-fastapi>=0.110        # 网页版服务
+fastapi>=0.115,<1.0   # 网页版服务（<1.0：兼容 starlette 0.x 的 TestClient）
+starlette>=0.40,<1.0  # FastAPI 底层框架（<1.0：1.x 的 TestClient 在 py3.13 有 no running event loop bug）
 uvicorn>=0.29         # ASGI 服务器
 python-multipart>=0.0.9  # FastAPI 表单/文件上传
 requests>=2.31        # 比价 web 模式的 HTTP 请求
