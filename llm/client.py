@@ -60,9 +60,11 @@ def _create_compat(client, kwargs):
 # 流式调用：逐块回调 on_delta(text)，返回与 chat() 同形的 message 对象
 # ---------------------------------------------------------------------------
 
-# mock 模式的"流式"节奏：每块字符数与间隔（秒），仅用于让离线演示也有一致的观感
-MOCK_CHUNK_CHARS = 24
-MOCK_CHUNK_INTERVAL = 0.025
+# mock 模式的"流式"节奏：每块字符数与间隔（秒），仅用于让离线演示也有一致的观感。
+# 24 字 / 25ms 时，一段 170 字的回答 0.2 秒就播完，肉眼看不到"逐字"；
+# 调到 12 字 / 50ms 后约 0.7 秒，演示时能明显看出流式（真实模式不受影响）。
+MOCK_CHUNK_CHARS = 12
+MOCK_CHUNK_INTERVAL = 0.05
 
 
 def chat_stream(messages, tools=None, on_delta=None, temperature=0.3, max_tokens=800):
