@@ -3,6 +3,8 @@
 字段说明：
 - messages:      OpenAI 消息序列（含 system/user/assistant/tool），跨节点累积
 - perception:    VLM 结构化感知结果（证据来源之一）
+- perception_image: perception 对应的图片路径——只有路径相同才复用感知，
+                 图一换旧感知立即失效（否则会把上一张图的商品信息用于新图）
 - profile_facts: 用户画像（从 SQLite 读取，注入系统提示）
 - tool_results:  工具原始输出列表（供证据校验与前端展示）
 - tool_rounds:   已执行的工具轮数（防死循环，超过上限后不再下发工具）
@@ -21,6 +23,7 @@ class AgentState(TypedDict, total=False):
     image_path: str
     messages: list
     perception: dict
+    perception_image: str
     profile_facts: list
     tool_results: list
     tool_rounds: int

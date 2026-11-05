@@ -14,6 +14,7 @@
 返回的字段完全一致（answer / perception / tool_results / violations / links）。
 """
 import asyncio
+import hashlib
 import json
 import queue
 import threading
@@ -37,6 +38,28 @@ HEARTBEAT_INTERVAL = 10
 POLL_INTERVAL = 0.05
 # 单次请求硬超时（秒）：超过则主动发 error 结束流，不让客户端无限等待
 HARD_TIMEOUT = 180
+
+# 感知缓存：key = 图片内容哈希 → 同一张图（多轮对话每轮都带图）不必重复调 VLM。
+# 上限很小、FIFO 淘汰：perception 只是小 JSON，够用且内存可控。
+_PERCEPTION_CACHE: dict = {}
+_PERCEPTION_CACHE_MAX = 8
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache_get(digest):
+    if not digest:
+        return None
+    with _CACHE_LOCK:
+        return _PERCEPTION_CACHE.get(digest)
+
+
+def _cache_put(digest, perception):
+    if not digest or not perception:
+        return
+    with _CACHE_LOCK:
+        _PERCEPTION_CACHE[digest] = perception
+        while len(_PERCEPTION_CACHE) > _PERCEPTION_CACHE_MAX:
+            _PERCEPTION_CACHE.pop(next(iter(_PERCEPTION_CACHE)))
 
 
 @app.get("/api/modes")
@@ -63,8 +86,12 @@ def sample():
 
 @app.post("/api/ask")
 async def ask(question: str = Form(...), image: UploadFile | None = File(None)):
-    image_path = await _save_upload(image)
-    result = runner.run_once(question, image_path)
+    image_path, digest = await _save_upload(image)
+    cached = _cache_get(digest)   # 同一张图已感知过 → 直接复用，不再调 VLM
+    result = runner.run_once(question, image_path,
+                             perception=cached,
+                             perception_image=image_path if cached else None)
+    _cache_put(digest, result.get("perception"))
     return _payload(result)
 
 
@@ -75,7 +102,8 @@ async def ask_stream(question: str = Form(...), image: UploadFile | None = File(
     图在后台线程里跑（LLM/VLM 是同步 SDK），事件通过队列交给协程推送；
     客户端断开时只停止入队，不做硬杀，避免半截状态。
     """
-    image_path = await _save_upload(image)
+    image_path, digest = await _save_upload(image)
+    cached = _cache_get(digest)
     emitter = streaming.Emitter()
     request_id = uuid.uuid4().hex[:8]
     state = {"closed": False, "timer": None}
@@ -97,7 +125,10 @@ async def ask_stream(question: str = Form(...), image: UploadFile | None = File(
     def worker():
         token = streaming.bind(emitter)
         try:
-            result = runner.run_once(question, image_path)
+            result = runner.run_once(question, image_path,
+                                     perception=cached,
+                                     perception_image=image_path if cached else None)
+            _cache_put(digest, result.get("perception"))
             _close("done", **_payload(result))
         except Exception as e:  # noqa: BLE001
             _close("error", message=str(e)[:300], stage="graph")
@@ -134,17 +165,25 @@ def history():
 # 内部工具
 # ---------------------------------------------------------------------------
 
-async def _save_upload(image) -> str:
-    """保存上传图片；未上传时回退示例图，保证零照片也能体验完整链路。"""
+async def _save_upload(image):
+    """保存上传图片；未上传时回退示例图，保证零照片也能体验完整链路。
+
+    返回 (path, digest)：
+      - digest 是图片【内容哈希】，作为感知缓存的键；
+      - 文件名也以 digest 开头，保证同一张图每次落在同一路径，
+        这样 perceive_node 的 "perception_image == image_path" 才能命中、复用感知。
+    """
     if image and image.filename:
         config.ensure_dirs()
-        safe_name = "%s_%s" % (uuid.uuid4().hex[:12], Path(image.filename).name)
-        path = config.UPLOAD_DIR / safe_name
-        path.write_bytes(await image.read())
-        return str(path)
+        data = await image.read()
+        digest = hashlib.sha256(data).hexdigest()[:16]
+        path = config.UPLOAD_DIR / ("%s_%s" % (digest, Path(image.filename).name))
+        if not path.exists():
+            path.write_bytes(data)
+        return str(path), digest
     if not config.SAMPLE_IMAGE.exists():
         runner.ensure_sample()
-    return str(config.SAMPLE_IMAGE)
+    return str(config.SAMPLE_IMAGE), None
 
 
 def _payload(result: dict) -> dict:

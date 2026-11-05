@@ -91,9 +91,10 @@ def _chat(args):
     import config
     runner.ensure_sample()
     image = args.image or str(config.SAMPLE_IMAGE)
-    print("进入多轮对话（输入 q 退出；图片：%s）" % image)
+    print("进入多轮对话（输入 q 退出；换图用 /img 图片路径；当前图片：%s）" % image)
     messages = None
-    perception = None   # 缓存画面感知：同一张图不必每轮重调 VLM
+    perception = None        # 缓存画面感知：同一张图不必每轮重调 VLM
+    perception_image = None  # 这份感知对应的图片路径（图一换必须失效）
     while True:
         try:
             q = input("\n你> ").strip()
@@ -103,9 +104,29 @@ def _chat(args):
             continue
         if q.lower() in ("q", "quit", "exit"):
             break
+
+        # 换图：/img <路径>（历史保留，但明确告知"以新图为准"）
+        if q.lower().startswith(("/img ", "/image ")):
+            new_path = q.split(" ", 1)[1].strip().strip('"').strip("'")
+            if not os.path.exists(new_path):
+                print("图片不存在：%s" % new_path)
+                continue
+            image = new_path
+            perception = None        # 强制重新感知
+            perception_image = None
+            messages = (messages or []) + [{
+                "role": "user",
+                "content": "（我换了一张新的商品图片，请只按这张图里的商品与价格回答，"
+                           "之前那张图的商品信息不要再引用。）",
+            }]
+            print("已切换图片：%s（对话历史保留，但只以新图为准）" % image)
+            continue
+
         result = runner.run_once(q, image, loose=args.loose, messages=messages,
-                                 perception=perception)
+                                 perception=perception,
+                                 perception_image=perception_image)
         perception = result.get("perception") or perception
+        perception_image = result.get("perception_image") or perception_image
         _print_result(result)
         # 携带本轮消息历史进入下一轮
         messages = [m for m in result.get("messages", [])

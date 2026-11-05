@@ -79,5 +79,78 @@ def test_multi_turn_reuses_perception(monkeypatch):
 
     runner.run_once("那第二个呢？", str(config.SAMPLE_IMAGE),
                     messages=first.get("messages"),
-                    perception=first.get("perception"))
-    assert counter["n"] == 1, "第二轮传入了感知，不应重复调用 VLM"
+                    perception=first.get("perception"),
+                    perception_image=first.get("perception_image"))
+    assert counter["n"] == 1, "同一张图 + 传入感知，不应重复调用 VLM"
+
+
+def test_perception_invalidated_when_image_changes(monkeypatch):
+    """换图必须重新感知：绝不能把上一张图的商品信息用到新图片。
+
+    对应功能「对话中更换商品图片」：感知与图片路径绑定，
+    路径一变旧感知立即失效，必须重新调用 VLM。
+    """
+    import os
+    import shutil
+    import tempfile
+
+    from llm import vlm
+
+    counter = {"n": 0}
+    original = vlm.perceive
+
+    def counted(path):
+        counter["n"] += 1
+        return original(path)
+
+    monkeypatch.setattr(vlm, "perceive", counted)
+    runner.ensure_sample()
+
+    first = runner.run_once("货架上有什么？", str(config.SAMPLE_IMAGE))
+    assert counter["n"] == 1
+
+    other = os.path.join(tempfile.mkdtemp(), "other_shelf.jpg")
+    shutil.copy(str(config.SAMPLE_IMAGE), other)
+
+    changed = runner.run_once(
+        "这张呢？", other,
+        messages=first.get("messages"),
+        perception=first.get("perception"),
+        perception_image=first.get("perception_image"),
+    )
+    assert counter["n"] == 2, "换了图必须重新调用 VLM"
+    assert changed.get("perception_image") == other
+
+
+def test_web_reuses_perception_for_same_image(monkeypatch):
+    """Web 端：同一张图连续两次请求，VLM 只调用一次（按内容哈希命中感知缓存）。"""
+    from fastapi.testclient import TestClient
+
+    from app import server
+    from llm import vlm
+
+    runner.ensure_sample()
+    server._PERCEPTION_CACHE.clear()
+
+    counter = {"n": 0}
+    original = vlm.perceive
+
+    def counted(path):
+        counter["n"] += 1
+        return original(path)
+
+    monkeypatch.setattr(vlm, "perceive", counted)
+
+    with open(str(config.SAMPLE_IMAGE), "rb") as fh:
+        data = fh.read()
+
+    with TestClient(server.app) as client:
+        for _ in range(2):
+            resp = client.post(
+                "/api/ask",
+                data={"question": "货架上有什么？"},
+                files={"image": ("shelf.jpg", data, "image/jpeg")},
+            )
+            assert resp.status_code == 200
+
+    assert counter["n"] == 1, "同一张图第二次请求应命中感知缓存，不再调 VLM"

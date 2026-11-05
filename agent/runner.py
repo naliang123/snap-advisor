@@ -11,7 +11,7 @@ from rag import index as rag_index
 
 
 def run_once(question: str, image_path=None, loose=None, messages=None,
-             perception=None) -> dict:
+             perception=None, perception_image=None) -> dict:
     graph = get_graph()
     facts = store.get_facts()
     history = list(messages) if messages else []
@@ -26,8 +26,10 @@ def run_once(question: str, image_path=None, loose=None, messages=None,
         "regenerate": False,
         "loose": loose if loose is not None else (not config.EVIDENCE_STRICT),
         "trace": [],
-        # 多轮对话可传入上一轮的感知结果，避免每轮重复调用 VLM
+        # 多轮对话可传入上一轮的感知结果；必须同时给出它对应的图片路径，
+        # 否则 perceive_node 无法判断"图是否换了"，可能误用旧感知串图。
         "perception": perception,
+        "perception_image": perception_image,
         "violations": [],
     }
     result = graph.invoke(state, {"recursion_limit": 40})

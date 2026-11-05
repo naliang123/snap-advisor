@@ -32,9 +32,13 @@ def perceive_node(state: dict) -> dict:
     感知失败不炸主流程：显式返回"空观察 + 失败原因"，
     下游回答会如实告诉用户"没识别出画面信息"——这也是证据契约的一部分。
     """
-    # 多轮对话里图片通常不变：复用上一轮的感知，避免每轮重复调 VLM（省钱省时）。
-    # 单次请求（CLI --image / Web）不传 perception，仍然每轮照常感知。
-    if state.get("perception"):
+    current_image = state.get("image_path")
+    cached = state.get("perception")
+
+    # 只有【同一张图】才复用感知：换图必须重新调用 VLM。
+    # 否则会把上一张图的商品/价格误用于新图片——这是正确性问题，
+    # 比"多花一次 VLM 调用"严重得多。
+    if cached and state.get("perception_image") == current_image:
         telemetry.event("perceive", {"source": "reused"})
         return {}
 
@@ -56,7 +60,7 @@ def perceive_node(state: dict) -> dict:
     })
     if em:
         em.emit("perception", data=p)
-    return {"perception": p}
+    return {"perception": p, "perception_image": current_image}
 
 
 # ---------------------------------------------------------------------------
