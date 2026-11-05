@@ -93,6 +93,7 @@ def _chat(args):
     image = args.image or str(config.SAMPLE_IMAGE)
     print("进入多轮对话（输入 q 退出；图片：%s）" % image)
     messages = None
+    perception = None   # 缓存画面感知：同一张图不必每轮重调 VLM
     while True:
         try:
             q = input("\n你> ").strip()
@@ -102,7 +103,9 @@ def _chat(args):
             continue
         if q.lower() in ("q", "quit", "exit"):
             break
-        result = runner.run_once(q, image, loose=args.loose, messages=messages)
+        result = runner.run_once(q, image, loose=args.loose, messages=messages,
+                                 perception=perception)
+        perception = result.get("perception") or perception
         _print_result(result)
         # 携带本轮消息历史进入下一轮
         messages = [m for m in result.get("messages", [])
@@ -125,8 +128,11 @@ def main():
 
     import config  # noqa: E402  (晚于环境变量设置，故需要)
 
+    # 运行测试
     if args.test:
         sys.exit(os.system('"%s" -m pytest tests -q' % sys.executable) and 1)
+
+    # 运行评测
     if args.eval:
         _run_script("evals/run_eval.py")
         return
@@ -139,11 +145,15 @@ def main():
     if args.rag_ablation:
         _run_script("evals/rag_ablation.py")
         return
+
+    # 重建索引
     if args.index:
         from rag import index as rag_index
         stats = rag_index.reindex_all()
         print("检索索引已重建：%s" % stats)
         return
+
+    # 启动网页服务
     if args.web:
         import socket
         import uvicorn
@@ -180,6 +190,8 @@ def main():
         return
 
     _banner(config)
+
+    # 多轮对话
     if args.chat:
         _chat(args)
         return

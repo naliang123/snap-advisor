@@ -58,3 +58,26 @@ def test_confirm_does_not_leak_regenerate():
     assert out["confirmed"] is True
     assert out.get("regenerate") is False, "必须显式复位 regenerate"
     assert nodes.route_after_confirm({"regenerate": out.get("regenerate")}) == "finalize"
+
+
+def test_multi_turn_reuses_perception(monkeypatch):
+    """多轮对话同一张图：第二轮应复用感知，不再调用 VLM（省时省钱）。"""
+    from llm import vlm
+
+    counter = {"n": 0}
+    original = vlm.perceive
+
+    def counted(path):
+        counter["n"] += 1
+        return original(path)
+
+    monkeypatch.setattr(vlm, "perceive", counted)
+    runner.ensure_sample()
+
+    first = runner.run_once("货架上有什么？", str(config.SAMPLE_IMAGE))
+    assert counter["n"] == 1, "第一轮必须调用一次 VLM"
+
+    runner.run_once("那第二个呢？", str(config.SAMPLE_IMAGE),
+                    messages=first.get("messages"),
+                    perception=first.get("perception"))
+    assert counter["n"] == 1, "第二轮传入了感知，不应重复调用 VLM"

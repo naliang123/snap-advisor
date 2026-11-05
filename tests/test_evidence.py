@@ -55,3 +55,29 @@ def test_yuan_suffix_extraction():
     assert evidence.extract_prices("这杯 12.5 元") == ["12.5"]
     assert evidence.extract_prices("促销价¥9.9") == ["9.9"]
     assert evidence.extract_prices("没有价格") == []
+
+
+def test_derived_price_from_promotion_passes():
+    """"第二件半价"推导出的合计/均摊属于"有依据的计算"，不该判违规。
+
+    真实链路曾误判：画面 49.90 + 促销"第二件半价"，回答给出
+    "两只共 74.85、折合 37.4 一只"，被判 2 处无证据价格。
+    """
+    state = _state(perception={
+        "items": [{"name": "保温杯", "price": "49.90"}],
+        "read_text": ["促销:第二件半价"],
+    })
+    out = evidence.check_answer(
+        "这款 ¥49.90，第二件半价，买两只一共 ¥74.85，折合约 ¥37.4 一只。", state)
+    assert out["violations"] == [], "有依据的计算价格不应判违规"
+
+
+def test_derivation_does_not_allow_arbitrary_numbers():
+    """放宽推导不等于放水：凭空出现、无法由证据算出的价格仍要判违规。"""
+    state = _state(perception={
+        "items": [{"name": "保温杯", "price": "49.90"}],
+        "read_text": [],
+    })
+    out = evidence.check_answer("这款 ¥49.90，但别家只要 ¥88.88。", state)
+    bad = [v for v in out["violations"] if v["type"] == "无证据价格"]
+    assert any(v["price"] == "88.88" for v in bad)

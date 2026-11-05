@@ -10,7 +10,8 @@ from memory import store
 from rag import index as rag_index
 
 
-def run_once(question: str, image_path=None, loose=None, messages=None) -> dict:
+def run_once(question: str, image_path=None, loose=None, messages=None,
+             perception=None) -> dict:
     graph = get_graph()
     facts = store.get_facts()
     history = list(messages) if messages else []
@@ -25,7 +26,8 @@ def run_once(question: str, image_path=None, loose=None, messages=None) -> dict:
         "regenerate": False,
         "loose": loose if loose is not None else (not config.EVIDENCE_STRICT),
         "trace": [],
-        "perception": None,
+        # 多轮对话可传入上一轮的感知结果，避免每轮重复调用 VLM
+        "perception": perception,
         "violations": [],
     }
     result = graph.invoke(state, {"recursion_limit": 40})

@@ -32,6 +32,12 @@ def perceive_node(state: dict) -> dict:
     感知失败不炸主流程：显式返回"空观察 + 失败原因"，
     下游回答会如实告诉用户"没识别出画面信息"——这也是证据契约的一部分。
     """
+    # 多轮对话里图片通常不变：复用上一轮的感知，避免每轮重复调 VLM（省钱省时）。
+    # 单次请求（CLI --image / Web）不传 perception，仍然每轮照常感知。
+    if state.get("perception"):
+        telemetry.event("perceive", {"source": "reused"})
+        return {}
+
     em = streaming.current()
     if em:
         em.emit("phase", stage="perceive", label="正在看这张图…")

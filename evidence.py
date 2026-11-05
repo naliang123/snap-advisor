@@ -124,13 +124,80 @@ def check_citations(answer: str, state: dict) -> list:
             for c in cited_ids(answer) if c not in valid]
 
 
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def derived_prices(allowed: set) -> set:
+    """"有依据的计算"：由已允许的价格做【受限】运算，得到可推导的价格。
+
+    现实场景：画面 49.90 + 促销"第二件半价" → 回答算出"两只共 74.85、
+    折合 37.4 一只"。这些数字没有直接出现在证据里，但完全可由证据推导，
+    判成幻觉是误伤（真实链路已踩到）。
+
+    为了不把"随便编一个数"也放行，只允许三类受限推导，且最多两层：
+      ① 折扣：a × {0.5, 0.8, 0.9}
+      ② 均摊：a ÷ {2, 3, 4}
+      ③ 合计：任意两个允许价格相加；以及"合计"再除以 2 / 3
+    这样能覆盖"半价合计 → 再均摊"，同时集合规模保持在千级、可解释。
+    """
+    # 只取前 12 个价格参与推导，避免工具结果多时集合爆炸
+    base = sorted({v for v in (_to_float(x) for x in allowed) if v and v > 0})[:12]
+    if not base:
+        return set()
+
+    # 第一层：折扣与均摊（49.90 × 0.5 = 24.95）
+    level1 = set(base)
+    for a in base:
+        for f in (0.5, 0.8, 0.9):
+            level1.add(round(a * f, 2))
+        for n in (2, 3, 4):
+            level1.add(round(a / n, 2))
+
+    # 第二层：合计 = 任意两个"一层值"相加（49.90 + 24.95 = 74.85）
+    out = set(level1)
+    ordered = sorted(level1)
+    for i, a in enumerate(ordered):
+        for b in ordered[i:]:
+            out.add(round(a + b, 2))
+
+    # 第三层：合计再均摊（74.85 ÷ 2 = 37.425 → 37.4）
+    for a in set(out):
+        for n in (2, 3):
+            out.add(round(a / n, 2))
+    return out
+
+
+def _covered(value: float, candidates: set) -> bool:
+    """容差匹配：计算结果通常被四舍五入（37.425 → 37.4、74.85 → 74.8）。"""
+    for c in candidates:
+        if abs(value - c) <= max(0.05, c * 0.005):
+            return True
+    return False
+
+
 def check_answer(answer: str, state: dict) -> dict:
-    """校验最终回答：返回违规清单与明细（供展示与评测）。"""
+    """校验最终回答：返回违规清单与明细（供展示与评测）。
+
+    价格判定分三步，前两步都算"有依据"：
+      ① 精确命中：数字直接出现在证据里；
+      ② 可推导命中：由证据价格经受限运算得到（促销合计、均摊、折扣）；
+      ③ 都不命中 → 判为"无证据价格"。
+    """
     allowed = allowed_prices(state)
+    allowed_f = {v for v in (_to_float(x) for x in allowed) if v is not None}
+    derived = derived_prices(allowed)
     violations = []
     for p in extract_prices(answer or ""):
-        if _norm(p) not in allowed:
-            violations.append({"type": "无证据价格", "price": p})
+        v = _to_float(p)
+        if v is None:
+            continue
+        if v in allowed_f or _covered(v, derived):
+            continue
+        violations.append({"type": "无证据价格", "price": p})
     if uses_demo_data(state) and "演示" not in (answer or ""):
         violations.append({"type": "未声明演示数据"})
     violations.extend(check_citations(answer, state))
@@ -138,5 +205,6 @@ def check_answer(answer: str, state: dict) -> dict:
         "violations": violations,
         "price_claims": extract_prices(answer or ""),
         "allowed_prices": sorted(allowed),
+        "derived_prices": sorted(round(x, 2) for x in derived),
         "citations": cited_ids(answer),
     }
