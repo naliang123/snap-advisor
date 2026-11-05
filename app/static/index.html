@@ -162,6 +162,9 @@
   <!-- 对话 -->
   <section class="card">
     <h2>2 · 向小拍提问</h2>
+    <div class="mini-row" style="margin:0 0 8px">
+      <button class="btn" id="newChat" type="button">新对话</button>
+    </div>
     <div id="chat"></div>
     <div class="status" id="status" hidden>
       <span class="dot"></span><span id="stext"></span>
@@ -309,6 +312,44 @@ const NO_PROGRESS_MS = 120000;  // 只有心跳、没有任何业务事件 → �
 let controller = null;
 let lastQuestion = '';
 
+// ---------- 聊天记录本地持久化（B） ----------
+// 手机点链接通常是"当前页跳转"：页面被卸载，DOM 里的聊天记录会丢。
+// 把对话写进 sessionStorage（同一标签页有效），页面重新加载时再渲染回来。
+const CHAT_KEY = 'snap_chat_v1';
+const CHAT_MAX = 40;
+let chatLog = [];
+try { chatLog = JSON.parse(sessionStorage.getItem(CHAT_KEY) || '[]') || []; }
+catch (e) { chatLog = []; }
+
+function persistChat() {
+  try { sessionStorage.setItem(CHAT_KEY, JSON.stringify(chatLog.slice(-CHAT_MAX))); }
+  catch (e) { /* 隐私模式或配额超限：忽略，不影响主流程 */ }
+}
+
+function remember(item) {
+  chatLog.push(item);
+  persistChat();
+}
+
+function restoreChat() {
+  for (const item of chatLog) {
+    if (item.role === 'user') { bubble('user', item.text || ''); continue; }
+    const ui = botBubble();
+    ui.txt.textContent = item.text || '';
+    renderLinks(ui.linksBox, item.links || []);
+    if (item.badges) {
+      const s = document.createElement('div');
+      s.innerHTML = item.badges;
+      ui.div.insertBefore(s, ui.linksBox);
+    }
+  }
+  const last = chatLog.filter(x => x.role !== 'user').pop();
+  if (last) {
+    if (last.perception) $('perception').textContent = last.perception;
+    if (last.tools) $('tools').textContent = last.tools;
+  }
+}
+
 function setStatus(t) {
   const s = $('stext');
   if (s) s.textContent = t;
@@ -411,6 +452,15 @@ async function runAsk(q) {
     $('perception').textContent = JSON.stringify(d.perception, null, 2);
     $('tools').textContent = JSON.stringify(d.tool_results, null, 2);
     $('check').textContent = JSON.stringify({ violations: d.violations }, null, 2);
+    // 落盘：手机点链接跳走再回来，这段对话还能渲染出来
+    remember({
+      role: 'assistant',
+      text: ui.txt.textContent,
+      links: ((d.links && d.links.length) ? d.links : links) || [],
+      badges: badges(d),
+      perception: JSON.stringify(d.perception, null, 2),
+      tools: JSON.stringify(d.tool_results, null, 2),
+    });
   };
 
   startThinking();
@@ -515,6 +565,15 @@ async function runAsk(q) {
       showError(ui.div, '生成中断：' + (stopReason || (err && err.message) || err) +
         '（已保留上面生成的部分）', () => { ui.div.remove(); runAsk(lastQuestion); });
     }
+    // 失败/停止也记一笔，避免回来后这段对话凭空消失
+    remember({
+      role: 'assistant',
+      text: ui.txt.textContent,
+      links: links || [],
+      badges: '',
+      perception: '',
+      tools: '',
+    });
   }
 }
 
@@ -523,11 +582,25 @@ $('form').onsubmit = async e => {
   const q = $('q').value.trim();
   if (!q) return;
   bubble('user', q);
+  remember({ role: 'user', text: q });
   $('q').value = '';
   await runAsk(q);
 };
 
 $('stop').onclick = () => { if (controller) controller.abort(); };
+
+$('newChat').onclick = () => {
+  if (!confirm('清空当前聊天记录？（不影响用户画像与历史存档）')) return;
+  chatLog = [];
+  try { sessionStorage.removeItem(CHAT_KEY); } catch (e) { /* 忽略 */ }
+  $('chat').innerHTML = '';
+  $('perception').textContent = '等待图片…';
+  $('tools').textContent = '—';
+  $('check').textContent = '—';
+};
+
+// 页面重新加载（含手机跳转后返回）时，把上次的对话渲染回来
+restoreChat();
 
 function badges(d) {
   const v = d.violations || [];
