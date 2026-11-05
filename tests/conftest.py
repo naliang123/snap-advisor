@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ["LLM_MODE"] = "mock"
 os.environ["VLM_MODE"] = "mock"
 os.environ["PRICE_MODE"] = "mock"
+# 嵌入也必须锁 mock：否则配了 EMBED_API_KEY 的 .env 会让测试去调真实嵌入服务，
+# 既变慢、要花钱，又因为网络抖动导致结果不可复现。
+os.environ["EMBED_MODE"] = "mock"
 
 _tmp = tempfile.mkdtemp(prefix="snap_test_")
 os.environ["SNAP_MEMORY_DB"] = os.path.join(_tmp, "memory.db")

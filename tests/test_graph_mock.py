@@ -39,3 +39,22 @@ def test_direct_answer_grounds_prices():
     answer = result.get("final_answer") or ""
     assert "保温杯" in answer
     assert result.get("violations") == []
+
+
+def test_confirm_does_not_leak_regenerate():
+    """回归保护：用户拒绝建议后 regenerate=True，重新生成后再进 confirm 必须复位。
+
+    LangGraph 的状态是增量合并：上一轮留下的 regenerate=True 如果不显式覆盖，
+    route_after_confirm 会每轮都返回 "agent"，形成 agent ⇄ confirm 死循环
+    （最终撞到 recursion_limit 才报错）。
+    """
+    from agent import nodes
+
+    out = nodes.confirm_node({
+        "messages": [{"role": "assistant", "content": "建议买这个，性价比高"}],
+        "confirmed": True,      # 已经确认过一次
+        "regenerate": True,     # 上一轮"拒绝"留下的脏状态
+    })
+    assert out["confirmed"] is True
+    assert out.get("regenerate") is False, "必须显式复位 regenerate"
+    assert nodes.route_after_confirm({"regenerate": out.get("regenerate")}) == "finalize"

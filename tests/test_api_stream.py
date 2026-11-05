@@ -32,6 +32,19 @@ def _parse_sse(text):
     return events
 
 
+def _stable(obj):
+    """剔除随时间变化的字段（fetched_at），只比较可复现的内容。
+
+    一次性与流式是两次独立请求，工具结果里的 fetched_at 是"当前时间"，
+    跨秒就会不同——它不属于"结果内容"，不应参与一致性断言。
+    """
+    if isinstance(obj, dict):
+        return {k: _stable(v) for k, v in obj.items() if k != "fetched_at"}
+    if isinstance(obj, list):
+        return [_stable(x) for x in obj]
+    return obj
+
+
 def test_stream_headers(client):
     resp = client.post("/api/ask/stream", data={"question": QUESTION})
     assert resp.status_code == 200
@@ -51,7 +64,8 @@ def test_stream_matches_once_result(client):
 
     done = events[-1]
     for key in ("answer", "perception", "tool_results", "violations", "links"):
-        assert done[key] == once[key], "流式与一次性结果必须一致：%s" % key
+        assert _stable(done[key]) == _stable(once[key]), \
+            "流式与一次性结果必须一致：%s" % key
 
     # 逐块推送的正文拼接后，是最终答案的正文（链接块由服务端确定性补全）
     deltas = "".join(e["text"] for e in events if e["type"] == "delta")

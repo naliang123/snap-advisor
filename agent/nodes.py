@@ -163,7 +163,10 @@ def confirm_node(state: dict) -> dict:
         and any(k in draft for k in _ADVICE_MARKERS)
     )
     if not need_confirm:
-        return {"confirmed": True}
+        # 必须显式把 regenerate 复位：LangGraph 的状态是【增量合并】，
+        # 上一轮"用户拒绝"留下的 regenerate=True 若不覆盖会一直保留，
+        # 导致 route_after_confirm 每次都回 agent，形成 agent ⇄ confirm 死循环。
+        return {"confirmed": True, "regenerate": False}
 
     print("\n[草稿建议] " + draft)
     ans = input("是否接受以上建议作为最终输出？(y=接受 / n=改为仅陈述事实) ").strip().lower()
@@ -176,7 +179,7 @@ def confirm_node(state: dict) -> dict:
                 "content": "我暂时不想听购买建议，请只陈述画面与工具结果里的事实。",
             }],
         }
-    return {"confirmed": True}
+    return {"confirmed": True, "regenerate": False}
 
 
 def route_after_confirm(state: dict) -> str:
