@@ -99,8 +99,12 @@ def main():
         rows_a[name] = m
         print("%-16s %-10s %-10s %.3f" % (
             name, _pct(m["recall@%d" % TOP_K]), _pct(m["recall@1"]), m["mrr"]))
-    print("（离线 mock 下三者差距小是预期内的：伪向量只比词面重合，"
-          "真实语义优势需配置 EMBED_API_KEY 后再看）")
+    if config.EMBED_MODE == "mock":
+        print("（离线 mock 下三者差距小是预期内的：伪向量只比词面重合，"
+              "真实语义优势需配置 EMBED_API_KEY 后再看）")
+    else:
+        print("（真实语义嵌入：向量与 BM25 互补；重排这里走离线词面打分，"
+              "因此与混合持平——真实 LLM 重排的收益需单独测）")
     report["experiments"]["strategy"] = rows_a
 
     # ---------------- B 切分大小 ----------------
