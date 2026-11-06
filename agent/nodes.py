@@ -48,11 +48,14 @@ def perceive_node(state: dict) -> dict:
     try:
         p = vlm.perceive(state.get("image_path"))
     except Exception as e:  # noqa: BLE001
+        # 失败原因必须完整进 trace：否则事后只知道"失败了"，不知道"为什么"
+        # （真实踩过：提示被截断成"VLM 感知失败…"，无从判断是限流、超时还是配置）
+        telemetry.event("perceive_error", {"error": str(e)[:600]})
         p = {
             "scene": "感知失败",
             "items": [], "read_text": [],
-            "uncertain": ["视觉感知出错：%s" % str(e)[:120]],
-            "evidence": {"source": "error", "note": str(e)[:160]},
+            "uncertain": ["视觉感知出错：%s" % str(e)[:300]],
+            "evidence": {"source": "error", "note": str(e)[:400]},
         }
     telemetry.event("perceive", {
         "source": (p or {}).get("evidence", {}).get("source"),
