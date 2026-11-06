@@ -33,6 +33,17 @@ _NOISE_WORDS = ("新款", "秋季", "夏季", "春季", "冬季", "女鞋", "男
 _IRRELEVANT_HINTS = ("股价", "股票", "涨停", "跌停", "财报", "基金", "证券", "市值",
                      "融资", "净值", "stock", "finance", "news")
 
+# 导购/分类/社区页：标题堆满关键词、搜索排名高，但静态页面里没有真实商品价格
+_GUIDE_PAGE_HINTS = ("/chanpin/", "/guide/", "guangtao.", "/list/", "/jiage/",
+                     "/product-", "post.smzdm.com", "post.m.smzdm.com", "wiki.smzdm.com")
+
+# 商品详情页：只有这类 URL 上的价格才可信（其余页面上的数字多半是促销文案）
+_PRODUCT_PAGE_RE = re.compile(
+    r"item\.jd\.com/|item\.m\.jd\.com/|npcitem\.jd\.hk/"
+    r"|detail\.tmall\.com/|item\.taobao\.com/|detail\.1688\.com/"
+    r"|mobile\.yangkeduo\.com/|product\.suning\.com/|item\.suning\.com/"
+)
+
 
 def _core_query(product: str) -> str:
     """把营销长标题提纯为检索核心词，如
@@ -49,6 +60,16 @@ def _core_tokens(product: str) -> list:
     return [p for p in parts if len(p) >= 2][:4]
 
 
+def _is_guide_page(url: str) -> bool:
+    """导购/分类/社区页：标题堆满关键词、排名高，但抓不到真实商品价格。"""
+    return any(h in (url or "") for h in _GUIDE_PAGE_HINTS)
+
+
+def _is_product_page(url: str) -> bool:
+    """是否为商品详情页——只有这类页面的价格才可能可信。"""
+    return bool(_PRODUCT_PAGE_RE.search(url or ""))
+
+
 def _relevant(product: str, results: list) -> list:
     """相关性过滤：丢弃财经新闻类页面，以及标题/摘要不含任何核心词的页面。
     这是比价可用性的关键——宁可返回空（如实说查不到），也不喂给模型垃圾。"""
@@ -62,7 +83,10 @@ def _relevant(product: str, results: list) -> list:
         if toks and not any(t.lower() in text for t in toks):
             continue
         keep.append(r)
-    return keep
+    # 导购/分类页优先剔除；若全被剔光（说明只搜到这类页），回退原结果——
+    # 保证"有结果、但不假装有价格"。
+    useful = [r for r in keep if not _is_guide_page(r.get("url"))]
+    return useful or keep
 
 # mock 模式的演示商品库（结果全部明确标注"演示数据"）
 _KNOWN_MOCK = {
@@ -120,13 +144,22 @@ def search_price_offers(product: str) -> dict:
         results = _relevant(product, raw)
         if results:
             results = _enrich_prices(results[:5])
+            results = _sanitize_prices(results)
+            # 剩下全是导购/分类页、且没有一个可信价格 → 这批结果对用户没价值，
+            # 换下一个检索源；都拿不到就如实返回"没查到"，不拿废链接凑数。
+            if (all(_is_guide_page(r.get("url")) for r in results)
+                    and not any(r.get("price") for r in results)):
+                continue
             # 有价格的排前面：模型优先看到可引用的报价
             results.sort(key=_price_sort_key)
             priced = [r for r in results if r.get("price")]
             return _resp(product, results, "web", engine=name,
                          core_query=_core_query(product),
                          dropped=len(raw) - len(results),
-                         priced=len(priced))
+                         priced=len(priced),
+                         # 全是导购/分类页、没有一个可信价格时，明确告诉模型
+                         # "没找到带价商品页"，别让它拿促销数字当行情
+                         reason=(None if priced else "no_priced_product_page"))
     return _resp(product, [], "web", "no_reliable_result",
                  core_query=_core_query(product))
 
@@ -172,6 +205,21 @@ def _enrich_prices(results: list, max_pages: int = 2) -> list:
             r["price"] = p
             r["note"] = ((r.get("note") or "")[:80] + "（价格取自商品页）").strip()
             fetched += 1
+    return results
+
+
+def _sanitize_prices(results: list) -> list:
+    """只保留商品详情页上的价格。
+
+    导购/分类/wiki 页上的"¥400"经常是"立减 400""月供 400"这类促销数字，
+    不是该商品的价格。宁可标"未取到"，也不让假价进入证据链——
+    证据契约能校验"有没有出处"，但校验不了"这个数字对不对"。
+    """
+    for r in results:
+        if r.get("price") and not _is_product_page(r.get("url")):
+            r["price"] = None
+            note = (r.get("note") or "").strip()
+            r["note"] = (note + "（非商品页，价格不可信）").strip()
     return results
 
 
