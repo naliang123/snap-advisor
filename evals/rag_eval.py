@@ -109,7 +109,14 @@ def main(real: bool = False):
         e2e.append({"question": q, "tools": tools,
                     "used_kb": "search_kb" in tools,
                     "cited": ("[记忆:" in ans or "【记忆:" in ans),
-                    "violations": res.get("violations") or []})
+                    "violations": res.get("violations") or [],
+                    # 诊断用：记录工具实际返回的 chunk_id 与回答片段，
+                    # 便于定位"引用编号对不上"是检索侧还是生成侧的问题
+                    "chunk_ids": [r.get("chunk_id")
+                                  for t in (res.get("tool_results") or [])
+                                  if t.get("tool") == "search_kb"
+                                  for r in ((t.get("output") or {}).get("results") or [])],
+                    "answer": ans[:300]})
     e2e_rate = (sum(1 for x in e2e if x["used_kb"]) / len(e2e)) if e2e else 0.0
 
     print("=" * 74)

@@ -118,8 +118,13 @@ def check_citations(answer: str, state: dict) -> list:
         if tr.get("tool") != "search_kb":
             continue
         for r in (tr.get("output") or {}).get("results") or []:
-            if r.get("chunk_id"):
-                valid.add(r["chunk_id"])
+            cid = r.get("chunk_id")
+            if not cid:
+                continue
+            valid.add(cid)
+            # 真实模型常把 "fact:xxx#0" 简写成 "fact:xxx"（把片段序号当噪声丢掉）。
+            # 序号是内部实现细节，只要能溯源到文档就够，因此允许省略。
+            valid.add(cid.split("#")[0])
     return [{"type": "引用不存在", "chunk_id": c}
             for c in cited_ids(answer) if c not in valid]
 

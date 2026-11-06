@@ -256,12 +256,16 @@ def _isolate_db(tag):
     """把记忆库/检索库/向量库切到独立文件（必须在 import config 之前调用）。
 
     tag="eval" / "ablation"：两类实验互不干扰，也不污染日常数据。
+    同时把 LLM/VLM/比价强制为离线 mock：评测必须确定性，且不该消耗 API 额度
+    （嵌入仍按 .env 决定——只有真实嵌入才能测出语义检索的效果）。
     """
     data = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     for env, name in (("SNAP_MEMORY_DB", "memory.db"),
                       ("SNAP_RAG_DB", "rag.db"),
                       ("SNAP_MILVUS_DB", "milvus.db")):
         os.environ[env] = os.path.join(data, "%s_%s" % (tag, name))
+    for env in ("LLM_MODE", "VLM_MODE", "PRICE_MODE"):
+        os.environ.setdefault(env, "mock")
 
 
 def _run_script(rel_path):
