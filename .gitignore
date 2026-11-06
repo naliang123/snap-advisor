@@ -14,6 +14,10 @@ data/ablation_memory.db
 data/rag.db
 data/eval_rag.db
 data/ablation_rag.db
+# Milvus Lite 以【目录】形式存储
+data/milvus.db/
+data/eval_milvus.db/
+data/ablation_milvus.db/
 data/trace.jsonl
 data/uploads/
 data/eval_report.json

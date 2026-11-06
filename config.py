@@ -68,6 +68,8 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 PERCEPTIONS_DIR = DATA_DIR / "perceptions"
 MEMORY_DB = Path(os.getenv("SNAP_MEMORY_DB", str(DATA_DIR / "memory.db")))
 RAG_DB = Path(os.getenv("SNAP_RAG_DB", str(DATA_DIR / "rag.db")))
+# 向量库：Milvus Lite（嵌入式）。注意它把路径当【目录】用，不是单文件
+MILVUS_DB = Path(os.getenv("SNAP_MILVUS_DB", str(DATA_DIR / "milvus.db")))
 TRACE_FILE = Path(os.getenv("SNAP_TRACE_FILE", str(DATA_DIR / "trace.jsonl")))
 SAMPLE_IMAGE = DATA_DIR / "sample_shelf.jpg"
 KB_DIR = DATA_DIR / "kb"          # 可选本地知识库（放 *.md 即被索引）
@@ -76,7 +78,7 @@ KB_DIR = DATA_DIR / "kb"          # 可选本地知识库（放 *.md 即被索�
 def ensure_dirs() -> None:
     """创建运行期目录（幂等）。"""
     for p in (DATA_DIR, UPLOAD_DIR, PERCEPTIONS_DIR, KB_DIR,
-              MEMORY_DB.parent, RAG_DB.parent):
+              MEMORY_DB.parent, RAG_DB.parent, MILVUS_DB.parent):
         p.mkdir(parents=True, exist_ok=True)
 
 

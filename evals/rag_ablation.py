@@ -62,6 +62,7 @@ def main():
     os.environ["PRICE_MODE"] = "mock"
     os.environ["SNAP_MEMORY_DB"] = str(ROOT / "data" / "ablation_memory.db")
     os.environ["SNAP_RAG_DB"] = str(ROOT / "data" / "ablation_rag.db")
+    os.environ["SNAP_MILVUS_DB"] = str(ROOT / "data" / "ablation_milvus.db")
     sys.path.insert(0, str(ROOT))
 
     import config  # noqa: E402

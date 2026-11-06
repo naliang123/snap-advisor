@@ -17,6 +17,7 @@ os.environ["EMBED_MODE"] = "mock"
 _tmp = tempfile.mkdtemp(prefix="snap_test_")
 os.environ["SNAP_MEMORY_DB"] = os.path.join(_tmp, "memory.db")
 os.environ["SNAP_RAG_DB"] = os.path.join(_tmp, "rag.db")
+os.environ["SNAP_MILVUS_DB"] = os.path.join(_tmp, "milvus.db")
 os.environ["SNAP_TRACE_FILE"] = os.path.join(_tmp, "trace.jsonl")
 
 sys.path.insert(0, str(ROOT))

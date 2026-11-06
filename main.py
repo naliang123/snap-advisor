@@ -147,6 +147,13 @@ def main():
     if args.confirm:
         os.environ["SNAP_CONFIRM"] = "1"
 
+    # 评测/消融切到独立的数据文件：必须早于 import config，
+    # 否则 config 在模块加载时就把路径定死了（脚本里再设已经无效）。
+    if args.eval or args.rag_eval:
+        _isolate_db("eval")
+    elif args.ablation or args.rag_ablation:
+        _isolate_db("ablation")
+
     import config  # noqa: E402  (晚于环境变量设置，故需要)
 
     # 运行测试
@@ -243,6 +250,18 @@ def _make_qr(url):
         import traceback
         traceback.print_exc()
         return None
+
+
+def _isolate_db(tag):
+    """把记忆库/检索库/向量库切到独立文件（必须在 import config 之前调用）。
+
+    tag="eval" / "ablation"：两类实验互不干扰，也不污染日常数据。
+    """
+    data = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    for env, name in (("SNAP_MEMORY_DB", "memory.db"),
+                      ("SNAP_RAG_DB", "rag.db"),
+                      ("SNAP_MILVUS_DB", "milvus.db")):
+        os.environ[env] = os.path.join(data, "%s_%s" % (tag, name))
 
 
 def _run_script(rel_path):

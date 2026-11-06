@@ -4,8 +4,8 @@
 > 判断值不值、线上比价、记住偏好——并且**每一句结论都必须有证据**。
 >
 > 技术栈：Python · LangGraph 状态图 · OpenAI 兼容 LLM（对话）+ VLM（视觉） ·
-> Function Calling 工具层 · SQLite 记忆 · FastAPI 网页版 · 离线 mock 模式 ·
-> 评测与消融实验
+> Function Calling 工具层 · SQLite 记忆与文本 · Milvus Lite 向量检索 ·
+> FastAPI 网页版 · 离线 mock 模式 · 评测与消融实验
 >
 > **本项目零 API Key 即可完整运行**（离线 mock 模式，含工具调用与评测，可复现）。
 >
@@ -88,15 +88,20 @@
 依赖清单（`requirements.txt`）：
 
 ```
-openai>=1.30          # OpenAI 兼容接口客户端（对话 LLM / VLM 共用）
+openai>=1.30          # OpenAI 兼容接口客户端（对话 LLM / VLM / 嵌入共用）
 langgraph>=0.2.0      # Agent 状态图编排
 python-dotenv>=1.0    # .env 配置加载
-fastapi>=0.110        # 网页版服务
+fastapi>=0.115,<1.0   # 网页版服务（<1.0 规避 starlette 1.x 的 TestClient 兼容问题）
+starlette>=0.40,<1.0  # FastAPI 底层框架
 uvicorn>=0.29         # ASGI 服务器
 python-multipart>=0.0.9  # 表单/文件上传
 requests>=2.31        # 比价 web 模式
 pillow>=10.0          # 合成示例货架图（仅 scripts 使用）
+qrcode>=7.4           # 局域网访问二维码（--web 时生成）
+milvus-lite>=3.2      # 嵌入式向量库（本地单目录，无需 Docker / 独立服务）
+pymilvus>=3.0         # Milvus 客户端
 pytest>=8.0           # 单元测试
+httpx>=0.27           # 测试：FastAPI TestClient
 ```
 
 **API Key（可选）**：全部不填 = 离线 mock 模式。要接真实模型时再填：
@@ -295,7 +300,7 @@ snap-advisor/
 ├── rag/                     # 检索层（RAG）
 │   ├── embed.py             #   文本向量（真实语义 / 离线词面哈希双模式）
 │   ├── chunk.py             #   切分（带重叠，保留可溯源 id）
-│   ├── store.py             #   SQLite 存 chunk + 向量 BLOB + FTS5 全文索引
+│   ├── store.py             #   SQLite 存文本 + FTS5；Milvus Lite 存向量
 │   ├── retrieve.py          #   向量 / BM25 / 混合 RRF / 重排
 │   └── index.py             #   索引构建：画像事实 / 历史问答 / 本地知识库
 │
@@ -472,15 +477,18 @@ VLM 被要求严格输出 JSON（scene/items/read_text/uncertain），并明确
 | `memory_turn` | 过去的问答（问 + 答） | 每轮问答结束后自动增量索引 |
 | `kb_file` | `data/kb/*.md` 本地知识库 | `main.py --index` |
 
-**管线**：切分（300 字 / 重叠 60）→ 嵌入 → SQLite 存（chunk 文本 + 向量 BLOB +
-FTS5 全文索引）→ 混合检索（RRF）→ 可选重排 → 作为**工具结果**交给模型 →
-引用编号 → `evidence.py` 做引用 grounding 校验。
+**管线**：切分（300 字 / 重叠 60）→ 嵌入 → SQLite 存文本 + FTS5 全文索引、
+Milvus Lite 存向量 → 混合检索（向量 ANN + BM25，RRF 融合）→ 可选重排 →
+作为**工具结果**交给模型 → 引用编号 → `evidence.py` 做引用 grounding 校验。
 
 关键取舍（每个都能讲出理由）：
-- **不引入向量数据库**：几千条以内 SQLite + 余弦暴力检索是毫秒级，零额外依赖、
-  零额外服务；真到十万条再换 ANN 不迟；
-- **向量运算用纯 Python**（未引入 numpy）：1536 维 × 千条也就百毫秒量级，
-  换来的是零新增依赖、离线可跑；
+- **向量用 Milvus Lite（嵌入式向量数据库）**：真正的 ANN 索引，但以嵌入式方式运行——
+  pip 安装、单目录存储、不需要 Docker 或独立服务，比 Chroma / FAISS 更贴合本项目
+  "clone 下来就能跑"的定位；
+- **文本与全文索引留在 SQLite（权威）**：计数、取原文、幂等删除都以 SQLite 为准，
+  Milvus 只存向量、可随时从文本重建——两边用 `chunk_id` 对齐，任一边丢了都能修复；
+- **collection 按「嵌入模式 + 维度」命名**（如 `kb_real_1024`）：换嵌入模型时新旧
+  向量天然隔离，不会拿 256 维的伪向量去和 1024 维的语义向量比；
 - **中文全文检索的坑**：SQLite FTS5 的 unicode61 会把连续汉字当一个整词，
   中文几乎检索不到——这里把中文展开成单字 + bigram 再入库（查询同样处理），
   用最朴素的方式让 BM25 在中文上真正生效；

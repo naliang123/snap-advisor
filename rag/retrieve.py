@@ -37,14 +37,20 @@ def _vector(query: str, top_k: int):
     qv = embed.embed_one(query)
     if not qv:
         return []
-    scored = []
-    for cid, doc, src, text, vec in store.all_vectors(config.EMBED_MODE, len(qv)):
-        s = embed.cosine(qv, vec)
-        if s > 0:
-            scored.append({"chunk_id": cid, "doc_id": doc, "source": src,
-                           "text": text, "score": s})
-    scored.sort(key=lambda x: -x["score"])
-    return scored[:top_k]
+    # 向量检索交给 Milvus Lite（ANN 索引），拿到候选后再回表取文本
+    pairs = store.vector_search(qv, config.EMBED_MODE, len(qv),
+                                max(top_k, CANDIDATE_K))
+    if not pairs:
+        return []
+    texts = store.get_texts([cid for cid, _ in pairs])
+    out = []
+    for cid, score in pairs:
+        row = texts.get(cid)
+        if not row:
+            continue
+        out.append({"chunk_id": cid, "doc_id": row["doc_id"],
+                    "source": row["source"], "text": row["text"], "score": score})
+    return out[:top_k]
 
 
 def _bm25(query: str, top_k: int):

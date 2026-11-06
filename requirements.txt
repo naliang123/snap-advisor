@@ -12,5 +12,7 @@ python-multipart>=0.0.9  # FastAPI 表单/文件上传
 requests>=2.31        # 比价 web 模式的 HTTP 请求
 pillow>=10.0          # 合成示例货架图 / 二维码渲染（仅 scripts 使用）
 qrcode>=7.4           # 局域网访问二维码（--web 时生成 data/web_qr.png）
+milvus-lite>=3.2      # 嵌入式向量库（本地单目录，无需 Docker / 独立服务）
+pymilvus>=3.0         # Milvus 客户端（Milvus Lite 走同一套 API）
 pytest>=8.0           # 单元测试
 httpx>=0.27           # 测试：FastAPI TestClient（流式接口一致性测试用）
